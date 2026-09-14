@@ -1,5 +1,5 @@
 import IconAll from "../../assets/CerberusLogoTwo.png"
-import { House, Video, Snowflake, Lightbulb, AlarmClockCheck, Diamond, ShieldCheck } from "lucide-react"
+import { House, Video, Snowflake, Lightbulb, AlarmClockCheck, Diamond, ShieldCheck, Music, FileClock } from "lucide-react"
 import { useState } from "react"
 
 export default function SideBar() {
@@ -10,6 +10,8 @@ export default function SideBar() {
         { id: "Climatização", label: "Climatização", icon: Snowflake },
         { id: "Iluminação", label: "Iluminação", icon: Lightbulb },
         { id: "Alarmes", label: "Alarmes", icon: AlarmClockCheck },
+        { id: "Músicas", label: "Músicas", icon: Music },
+        { id: "Log", label: "Log", icon: FileClock },
     ];
 
     return (
