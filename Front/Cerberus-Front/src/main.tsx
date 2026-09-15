@@ -4,6 +4,9 @@ import './index.css'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Login from './Pages/Login'
 import DashBoard from './Pages/DashBoard'
+import Desenvolvimento from './Pages/Desenvolvimento'
+import Iluminacao from './Pages/Iluminação'
+import Climatizacao from './Pages/Climatização'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -11,6 +14,9 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/dashboard" element={<DashBoard />} />
+        <Route path="/desenvolvimento" element={<Desenvolvimento />} />
+        <Route path="/iluminacao" element={<Iluminacao />} />
+        <Route path="/climatizacao" element={<Climatizacao />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>)
