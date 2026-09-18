@@ -2,12 +2,13 @@ import { useState, useEffect } from "react";
 import CerberusBackground from "../assets/CerberusBackground.png";
 import SideBar from "../Components/DashBoard/SideBar";
 import { Power, Zap, Timer, AlertCircle, Wifi, WifiOff, Snowflake, Thermometer } from "lucide-react";
+import SideBarMobile from "../Components/DashBoard/SideBarMobile";
 
 export default function Climatizacao() {
     const [power, setPower] = useState<boolean>(false);
     const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
-    const BACKEND_URL = `http://${window.location.hostname}:8000/api/ar-condicionado`;
+    const BACKEND_URL = `http://${window.location.hostname}:8001/api/ar-condicionado`;
 
     useEffect(() => {
         const fetchStatus = async () => {
@@ -57,7 +58,12 @@ export default function Climatizacao() {
             />
             <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] -z-10" />
 
-            <SideBar />
+            <div className="hidden sm:block">
+                <SideBar />
+            </div>
+            <div className="sm:hidden">
+                <SideBarMobile />
+            </div>
 
             <div className="relative z-10 flex-1 p-3 sm:p-6 md:p-8 text-white flex flex-col items-center justify-start md:justify-center overflow-y-auto py-6">
                 <div className="w-full max-w-3xl backdrop-blur-[4px] bg-[#000b425e] border border-[#0066ff8c] shadow-[0_0_35px_rgba(0,183,255,0.2)] rounded-2xl sm:rounded-3xl p-4 sm:p-8 flex flex-col gap-6 sm:gap-8">

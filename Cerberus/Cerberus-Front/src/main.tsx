@@ -7,6 +7,7 @@ import DashBoard from './Pages/DashBoard'
 import Desenvolvimento from './Pages/Desenvolvimento'
 import Iluminacao from './Pages/Iluminação'
 import Climatizacao from './Pages/Climatização'
+import Cameras from './Pages/Cameras'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -17,6 +18,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/desenvolvimento" element={<Desenvolvimento />} />
         <Route path="/iluminacao" element={<Iluminacao />} />
         <Route path="/climatizacao" element={<Climatizacao />} />
+        <Route path="/cameras" element={<Cameras />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>)

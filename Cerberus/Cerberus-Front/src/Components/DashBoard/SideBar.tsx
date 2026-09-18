@@ -1,5 +1,5 @@
 import IconAll from "../../assets/CerberusLogoTwo.png"
-import { House, Video, Snowflake, Lightbulb, AlarmClockCheck, Diamond, ShieldCheck, Music, FileClock } from "lucide-react"
+import { House, Video, Snowflake, Lightbulb, AlarmClockCheck, Diamond, ShieldCheck, Music, FileClock, Cctv } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 export default function SideBar() {
@@ -7,7 +7,7 @@ export default function SideBar() {
     const navigate = useNavigate()
     const sideBarItems = [
         { id: "Dashboard", label: "Dashboard", icon: House, rota: "/dashboard" },
-        { id: "Câmeras", label: "Câmeras", icon: Video, rota: "/desenvolvimento" },
+        { id: "Câmeras", label: "Câmeras", icon: Cctv, rota: "/cameras" },
         { id: "Climatização", label: "Climatização", icon: Snowflake, rota: "/climatizacao" },
         { id: "Iluminação", label: "Iluminação", icon: Lightbulb, rota: "/iluminacao" },
         { id: "Alarmes", label: "Alarmes", icon: AlarmClockCheck, rota: "/desenvolvimento" },
@@ -16,7 +16,7 @@ export default function SideBar() {
     ];
 
     return (
-        <div className="backdrop-blur-[100px] shadow-[10px_0_30px_rgba(15,124,250,0.15)] gap-6 md:gap-10 w-full md:w-80 shrink-0 flex flex-col items-center md:h-screen border-b-2 md:border-b-0 md:border-r-2 border-[#2920d6] bg-linear-to-br from-[#050569] via-[#06023b] to-[#080536] pb-4 md:pb-0">
+        <div className="backdrop-blur-[100px] shadow-[10px_0_30px_rgba(15,124,250,0.15)] gap-6 sm: md:gap-10 w-full md:w-80 shrink-0 flex flex-col items-center md:h-screen border-b-2 md:border-b-0 md:border-r-2 border-[#2920d6] bg-linear-to-br from-[#0e0ed1] via-[#06023b] to-[#080536] pb-4 md:pb-0">
             <div className="group cursor-pointer hover:scale-110 flex flex-col items-center gap-10">
                 <img
                     src={IconAll}

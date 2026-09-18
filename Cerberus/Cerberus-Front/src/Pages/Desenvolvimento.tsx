@@ -15,9 +15,10 @@ export default function Desenvolvimento() {
             <div className="absolute inset-0 bg-linear-to-br from-transparent via-transparent to-[#2535cf]" />
             <div className="absolute inset-0 bg-linear-to-t from-black via-transparent to-transparent opacity-75" />
             <div className="absolute inset-0 flex items-start justify-center z-10 mt-10">
+
                 <div className="relative flex flex-col gap-y- items-center">
                     <div className="backdrop-blur-[1px] border-b-1 border-r-1 from-linear-to-t to-[#020314] flex flex-col justify-center items-center gap-y-2 bg-linear-to-b from-[#0a116349] via-[#08105728] to-[#08105731] p-5 rounded-xl border-[#258db6] shadow-lg shadow-blue-500/50">
-                        <h1 className="drop-shadow-[0px_0px_10px_#0877b8] font-ibm-plex text-6xl font-semibold text-[#0877b8]">
+                        <h1 className="drop-shadow-[0px_0px_10px_#0877b8] font-ibm-plex text-3xl font-semibold text-[#0877b8]">
                             EM DESENVOLVIMENTO
                         </h1>
                         <div className="flex items-center gap-3">
