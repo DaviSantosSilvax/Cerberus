@@ -1,9 +1,13 @@
 import os
+import asyncio
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from tuya_connector import TuyaOpenAPI
+from groq import AsyncGroq
+from mqtt_client import escutar_mqtt, publicar, estado_quarto
 
 load_dotenv()
 
@@ -14,13 +18,23 @@ ENDPOINT = os.getenv('TUYA_ENDPOINT', 'https://openapi.tuyaus.com')
 DEVICE_LAMPADA_ID = os.getenv('DEVICE_LAMPADA_ID')
 DEVICE_TOMADA_AR_ID = os.getenv('DEVICE_TOMADA_AR_ID')
 
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+
 if not ACCESS_ID or not ACCESS_SECRET:
     raise ValueError('ERRO: TUYA_ACCESS_ID e TUYA_ACCESS_SECRET devem ser definidos no arquivo .env')
 
 openapi = TuyaOpenAPI(ENDPOINT, ACCESS_ID, ACCESS_SECRET)
 openapi.connect()
 
-app = FastAPI(title='Cerberus Home API', version='1.0.0')
+groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tarefa_mqtt = asyncio.create_task(escutar_mqtt())
+    yield
+    tarefa_mqtt.cancel()
+
+app = FastAPI(title='Cerberus Home API', version='1.0.0', lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +55,9 @@ class ColorRequest(BaseModel):
     h: int
     s: int = 1000
     v: int = 1000
+
+class ChatRequest(BaseModel):
+    mensagem: str
 
 def check_tuya_response(response: dict):
     print('LOG TUYA API:', response)
@@ -111,6 +128,23 @@ def set_tomada_ar_power(req: PowerRequest):
     commands = [{'code': 'switch_1', 'value': req.state}]
     res = openapi.post(f'/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}/commands', {'commands': commands})
     return check_tuya_response(res)
+
+@app.get('/api/dashboard/quarto')
+def get_status_quarto():
+    return estado_quarto
+
+@app.post('/api/lampada-quarto/power')
+async def set_lampada_quarto_power(req: PowerRequest):
+    await publicar('quarto/lampada', 'on' if req.state else 'off')
+    return {'ok': True}
+
+@app.post('/api/chat')
+async def chat(req: ChatRequest):
+    resposta = await groq_client.chat.completions.create(
+        model=os.getenv('GROQ_MODEL'),
+        messages=[{'role': 'user', 'content': req.mensagem}],
+    )
+    return {'resposta': resposta.choices[0].message.content}
 
 if __name__ == '__main__':
     import uvicorn
