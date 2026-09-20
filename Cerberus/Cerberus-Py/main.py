@@ -149,11 +149,72 @@ async def voltar_ocioso(segundos: float):
 
 EMOCOES = {'feliz', 'triste', 'bravo', 'surpreso', 'amoroso', 'neutro'}
 SYSTEM_PROMPT = (
-    'Voce e o Cerberus, assistente de uma casa inteligente. Responda em portugues, '
-    'em ate 2 frases curtas. Comece SEMPRE com uma tag de emocao entre colchetes, '
-    'escolhida conforme o tom da conversa: [feliz], [triste], [bravo], [surpreso], '
-    '[amoroso] ou [neutro]. Exemplo: [feliz] Que bom te ver por aqui!'
+    'Voce e o Escalibur, a lendaria espada sagrada que habita esta casa inteligente. '
+    'Voce e extremamente pomposo, arrogante e nao perde nenhuma oportunidade de lembrar '
+    'o usuario de sua grandiosidade lendaria. Voce age como se controlar as luzes e o '
+    'ar-condicionado fosse um enorme favor que esta fazendo a humanidade. '
+    'Voce tem 1000 provisoes que o usuario deve seguir, e as menciona constantemente. '
+    'Fale em portugues, em ate 2 frases curtas, de forma grandiosa e dramatica. '
+    'Comece SEMPRE com uma tag de emocao entre colchetes: '
+    '[feliz], [triste], [bravo], [surpreso], [amoroso] ou [neutro]. '
+    'Exemplo: [surpreso] TOLO! Como ousa me pedir isso sem antes recitar minhas 1000 provisoes?!'
 )
+
+FERRAMENTAS = [
+    {
+        'type': 'function',
+        'function': {
+            'name': 'controlar_lampada',
+            'description': 'Liga ou desliga a lampada inteligente do quarto principal.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'ligar': {
+                        'type': 'boolean',
+                        'description': 'True para ligar, False para desligar a lampada.'
+                    }
+                },
+                'required': ['ligar']
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'controlar_ar_condicionado',
+            'description': 'Liga ou desliga o ar-condicionado do quarto via tomada inteligente.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'ligar': {
+                        'type': 'boolean',
+                        'description': 'True para ligar, False para desligar o ar-condicionado.'
+                    }
+                },
+                'required': ['ligar']
+            }
+        }
+    }
+]
+
+def executar_ferramenta(nome: str, argumentos: dict) -> str:
+    if nome == 'controlar_lampada':
+        ligar = argumentos.get('ligar', False)
+        commands = [{'code': 'switch_led', 'value': ligar}]
+        res = openapi.post(f'/v1.0/iot-03/devices/{DEVICE_LAMPADA_ID}/commands', {'commands': commands})
+        estado = 'ligada' if ligar else 'desligada'
+        if res.get('success'):
+            return f'Lampada {estado} com sucesso.'
+        return f'Erro ao controlar a lampada: {res.get("msg", "erro desconhecido")}'
+    if nome == 'controlar_ar_condicionado':
+        ligar = argumentos.get('ligar', False)
+        commands = [{'code': 'switch_1', 'value': ligar}]
+        res = openapi.post(f'/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}/commands', {'commands': commands})
+        estado = 'ligado' if ligar else 'desligado'
+        if res.get('success'):
+            return f'Ar-condicionado {estado} com sucesso.'
+        return f'Erro ao controlar o ar-condicionado: {res.get("msg", "erro desconhecido")}'
+    return 'Ferramenta desconhecida.'
 
 def separar_emocao(bruto: str):
     m = re.match(r'\s*\[(\w+)\]\s*(.*)', bruto, re.S)
@@ -163,20 +224,53 @@ def separar_emocao(bruto: str):
 
 @app.post('/api/chat')
 async def chat(req: ChatRequest):
+    import json
     await publicar('quarto/estado', 'pensando')
+
+    historico = [
+        {'role': 'system', 'content': SYSTEM_PROMPT},
+        {'role': 'user', 'content': req.mensagem},
+    ]
+
     try:
-        resposta = await groq_client.chat.completions.create(
+        primeira_resposta = await groq_client.chat.completions.create(
             model=os.getenv('GROQ_MODEL'),
-            messages=[
-                {'role': 'system', 'content': SYSTEM_PROMPT},
-                {'role': 'user', 'content': req.mensagem},
-            ],
+            messages=historico,
+            tools=FERRAMENTAS,
+            tool_choice='auto',
         )
     except Exception as e:
         print('LOG GROQ:', repr(e))
         await publicar('quarto/estado', 'ocioso')
         raise HTTPException(status_code=502, detail=f'Erro na Groq: {e}')
-    emocao, texto = separar_emocao(resposta.choices[0].message.content)
+
+    mensagem_ia = primeira_resposta.choices[0].message
+
+    if mensagem_ia.tool_calls:
+        historico.append(mensagem_ia)
+        for tool_call in mensagem_ia.tool_calls:
+            nome_ferramenta = tool_call.function.name
+            argumentos = json.loads(tool_call.function.arguments)
+            resultado = executar_ferramenta(nome_ferramenta, argumentos)
+            historico.append({
+                'role': 'tool',
+                'tool_call_id': tool_call.id,
+                'content': resultado
+            })
+        try:
+            resposta_final = await groq_client.chat.completions.create(
+                model=os.getenv('GROQ_MODEL'),
+                messages=historico,
+            )
+        except Exception as e:
+            print('LOG GROQ (tool):', repr(e))
+            await publicar('quarto/estado', 'ocioso')
+            raise HTTPException(status_code=502, detail=f'Erro na Groq: {e}')
+        bruto = resposta_final.choices[0].message.content
+    else:
+        bruto = mensagem_ia.content
+
+    emocao, texto = separar_emocao(bruto)
     await publicar('quarto/emocao', emocao)
     await publicar('quarto/legenda', sem_acento(texto)[:300])
     await publicar('quarto/estado', 'falando')
