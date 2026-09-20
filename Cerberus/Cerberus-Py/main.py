@@ -1,5 +1,6 @@
 import os
 import asyncio
+import unicodedata
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -138,13 +139,135 @@ async def set_lampada_quarto_power(req: PowerRequest):
     await publicar('quarto/lampada', 'on' if req.state else 'off')
     return {'ok': True}
 
+def sem_acento(texto: str) -> str:
+    return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode()
+
+async def voltar_ocioso(segundos: float):
+    await asyncio.sleep(segundos)
+    await publicar('quarto/estado', 'ocioso')
+
+FERRAMENTAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "controlar_lampada",
+            "description": "Liga ou desliga a lampada inteligente do quarto principal.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ligar": {
+                        "type": "boolean",
+                        "description": "True para ligar, False para desligar a lampada."
+                    }
+                },
+                "required": ["ligar"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "controlar_ar_condicionado",
+            "description": "Liga ou desliga o ar-condicionado do quarto via tomada inteligente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ligar": {
+                        "type": "boolean",
+                        "description": "True para ligar, False para desligar o ar-condicionado."
+                    }
+                },
+                "required": ["ligar"]
+            }
+        }
+    }
+]
+
+def executar_ferramenta(nome: str, argumentos: dict) -> str:
+    if nome == "controlar_lampada":
+        ligar = argumentos.get("ligar", False)
+        commands = [{"code": "switch_led", "value": ligar}]
+        res = openapi.post(f"/v1.0/iot-03/devices/{DEVICE_LAMPADA_ID}/commands", {"commands": commands})
+        estado = "ligada" if ligar else "desligada"
+        if res.get("success"):
+            return f"Lampada {estado} com sucesso."
+        return f"Erro ao controlar a lampada: {res.get('msg', 'erro desconhecido')}"
+
+    if nome == "controlar_ar_condicionado":
+        ligar = argumentos.get("ligar", False)
+        commands = [{"code": "switch_1", "value": ligar}]
+        res = openapi.post(f"/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}/commands", {"commands": commands})
+        estado = "ligado" if ligar else "desligado"
+        if res.get("success"):
+            return f"Ar-condicionado {estado} com sucesso."
+        return f"Erro ao controlar o ar-condicionado: {res.get('msg', 'erro desconhecido')}"
+
+    return "Ferramenta desconhecida."
+
 @app.post('/api/chat')
 async def chat(req: ChatRequest):
-    resposta = await groq_client.chat.completions.create(
-        model=os.getenv('GROQ_MODEL'),
-        messages=[{'role': 'user', 'content': req.mensagem}],
-    )
-    return {'resposta': resposta.choices[0].message.content}
+    import json
+    await publicar('quarto/estado', 'pensando')
+
+    historico = [
+        {
+            'role': 'system',
+            'content': (
+                'Voce e o Cerberus, assistente de automacao residencial inteligente. '
+                'Quando o usuario pedir para ligar ou desligar a lampada ou o ar-condicionado, '
+                'use as ferramentas disponiveis para executar a acao. '
+                'Sempre confirme o que foi feito de forma amigavel e direta em portugues.'
+            )
+        },
+        {'role': 'user', 'content': req.mensagem}
+    ]
+
+    try:
+        primeira_resposta = await groq_client.chat.completions.create(
+            model=os.getenv('GROQ_MODEL'),
+            messages=historico,
+            tools=FERRAMENTAS,
+            tool_choice='auto',
+        )
+    except Exception as e:
+        print('LOG GROQ:', repr(e))
+        await publicar('quarto/estado', 'ocioso')
+        raise HTTPException(status_code=502, detail=f'Erro na Groq: {e}')
+
+    mensagem_ia = primeira_resposta.choices[0].message
+
+    if mensagem_ia.tool_calls:
+        historico.append(mensagem_ia)
+
+        for tool_call in mensagem_ia.tool_calls:
+            nome_ferramenta = tool_call.function.name
+            argumentos = json.loads(tool_call.function.arguments)
+            resultado = executar_ferramenta(nome_ferramenta, argumentos)
+
+            historico.append({
+                'role': 'tool',
+                'tool_call_id': tool_call.id,
+                'content': resultado
+            })
+
+        try:
+            resposta_final = await groq_client.chat.completions.create(
+                model=os.getenv('GROQ_MODEL'),
+                messages=historico,
+            )
+        except Exception as e:
+            print('LOG GROQ (tool response):', repr(e))
+            await publicar('quarto/estado', 'ocioso')
+            raise HTTPException(status_code=502, detail=f'Erro na Groq: {e}')
+
+        texto = resposta_final.choices[0].message.content
+    else:
+        texto = mensagem_ia.content
+
+    await publicar('quarto/legenda', sem_acento(texto)[:300])
+    await publicar('quarto/estado', 'falando')
+    asyncio.create_task(voltar_ocioso(max(3, len(texto) / 15)))
+    return {'resposta': texto}
 
 if __name__ == '__main__':
     import uvicorn
