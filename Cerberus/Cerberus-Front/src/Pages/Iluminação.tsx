@@ -14,7 +14,7 @@ export default function Iluminação() {
     const [hueDegree, setHueDegree] = useState<number>(180);
     const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
-    const BACKEND_URL = `http://${window.location.hostname}:8001/api/lampada`;
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ? `${import.meta.env.VITE_BACKEND_URL}/lampada` : `http://${window.location.hostname}:8001/api/lampada`;
 
     useEffect(() => {
         const fetchStatus = async () => {

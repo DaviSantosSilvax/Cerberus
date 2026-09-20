@@ -8,7 +8,7 @@ export default function Climatizacao() {
     const [power, setPower] = useState<boolean>(false);
     const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
-    const BACKEND_URL = `http://${window.location.hostname}:8001/api/ar-condicionado`;
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ? `${import.meta.env.VITE_BACKEND_URL}/ar-condicionado` : `http://${window.location.hostname}:8001/api/ar-condicionado`;
 
     useEffect(() => {
         const fetchStatus = async () => {
