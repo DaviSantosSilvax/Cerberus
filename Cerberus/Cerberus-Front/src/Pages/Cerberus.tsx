@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import SideBar from "../Components/DashBoard/SideBar";
 import SideBarMobile from "../Components/DashBoard/SideBarMobile";
 import BackGround from "../assets/CerberusBackgroundMobile.jpg";
-import { Bot, Send, Loader2, Heart, Home, Smile, Check } from "lucide-react";
+import { Bot, Send, Loader2, Heart, Home, Monitor, Smile, Check } from "lucide-react";
 
 export default function Cerberus() {
+    const navigate = useNavigate();
     const [inputMessage, setInputMessage] = useState("");
     const [messages, setMessages] = useState<Array<{ sender: "user" | "bot"; text: string }>>([]);
     const [loading, setLoading] = useState(false);
@@ -31,13 +33,13 @@ export default function Cerberus() {
 
             if (res.ok) {
                 setDisplayMode(tela);
-                setDisplayStatusMsg(`Display Cerberus alternado para ${tela === "home" ? "HOME 🏠" : "ROSTO 🤖"}!`);
+                setDisplayStatusMsg(`Display ESP32: tela alterada para ${tela === "home" ? "HOME 🏠" : "ROSTO 🤖"}!`);
             } else {
-                setDisplayStatusMsg("Erro ao alterar tela no display.");
+                setDisplayStatusMsg("Erro ao enviar comando para o display.");
             }
         } catch (error) {
-            console.error(error);
-            setDisplayStatusMsg("Falha de conexão com o backend.");
+            console.error("Erro ao alterar display:", error);
+            setDisplayStatusMsg("Falha ao conectar ao backend.");
         } finally {
             setDisplayLoading(false);
             setTimeout(() => setDisplayStatusMsg(null), 3500);
@@ -92,7 +94,7 @@ export default function Cerberus() {
                 <div className="w-full max-w-3xl backdrop-blur-[4px] bg-[#000b425e] border border-[#0066ff8c] shadow-[0_0_35px_rgba(0,183,255,0.2)] rounded-2xl p-4 sm:p-6 flex flex-col gap-4 h-[85vh]">
 
                     {/* CABEÇALHO */}
-                    <div className="flex items-center justify-between border-b border-[#004bbb8c] pb-3">
+                    <div className="flex flex-wrap items-center justify-between border-b border-[#004bbb8c] pb-3 gap-2">
                         <div className="flex items-center gap-3">
                             <Bot className="w-9 h-9 text-[#39a6ff] drop-shadow-[1px_1px_12px_#39a6ff]" />
                             <div>
@@ -103,21 +105,34 @@ export default function Cerberus() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        {/* BOTÕES DE AÇÃO NO TOPO */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* BOTÃO 1: IR PARA HOME / DASHBOARD DO REACT */}
+                            <button
+                                onClick={() => navigate("/dashboard")}
+                                type="button"
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/40 text-cyan-300 border border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.25)] transition-all cursor-pointer text-xs sm:text-sm font-rajdhani font-semibold active:scale-95"
+                                title="Voltar para a página inicial (DashBoard)"
+                            >
+                                <Home className="w-4 h-4 text-cyan-400" />
+                                <span>DashBoard</span>
+                            </button>
+
+                            {/* BOTÃO 2: ALTERNAR DISPLAY FÍSICO DO ESP32 */}
                             {displayMode === "rosto" ? (
                                 <button
                                     onClick={() => mudarTelaDisplay("home")}
                                     disabled={displayLoading}
                                     type="button"
                                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all cursor-pointer text-xs sm:text-sm font-rajdhani font-semibold active:scale-95 disabled:opacity-50"
-                                    title="Alternar Display do Cerberus para a Tela Home"
+                                    title="Alternar Display do ESP32 para a Tela Home"
                                 >
                                     {displayLoading ? (
                                         <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
                                     ) : (
-                                        <Home className="w-4 h-4 text-cyan-400" />
+                                        <Monitor className="w-4 h-4 text-cyan-400" />
                                     )}
-                                    <span>Ir p/ Home (Display)</span>
+                                    <span>Display Home</span>
                                 </button>
                             ) : (
                                 <button
@@ -125,17 +140,18 @@ export default function Cerberus() {
                                     disabled={displayLoading}
                                     type="button"
                                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] transition-all cursor-pointer text-xs sm:text-sm font-rajdhani font-semibold active:scale-95 disabled:opacity-50"
-                                    title="Voltar Display para o Rosto do Cerberus"
+                                    title="Voltar Display do ESP32 para o Rosto animado"
                                 >
                                     {displayLoading ? (
                                         <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
                                     ) : (
                                         <Smile className="w-4 h-4 text-indigo-400" />
                                     )}
-                                    <span>Ver Rosto (Display)</span>
+                                    <span>Display Rosto</span>
                                 </button>
                             )}
 
+                            {/* BOTÃO 3: FAZER CARINHO */}
                             <button
                                 onClick={sendCarinho}
                                 disabled={loading}
@@ -144,7 +160,7 @@ export default function Cerberus() {
                                 title="Fazer Carinho no Cerberus"
                             >
                                 <Heart className="w-4 h-4 fill-pink-400 text-pink-400 animate-pulse" />
-                                <span>Fazer Carinho</span>
+                                <span>Carinho</span>
                             </button>
                         </div>
                     </div>
@@ -171,7 +187,6 @@ export default function Cerberus() {
                                 </button>
                             </div>
                         )}
-
                         {messages.map((msg, index) => (
                             <div
                                 key={index}
@@ -183,11 +198,10 @@ export default function Cerberus() {
                                 {msg.text}
                             </div>
                         ))}
-
                         {loading && (
-                            <div className="mr-auto flex items-center gap-2 p-3 bg-[#091136]/90 text-cyan-400 rounded-xl border border-cyan-800 text-sm font-rajdhani">
-                                <Loader2 className="w-4 h-4 animate-spin text-[#0077ff]" />
-                                <span>Cerberus está pensando...</span>
+                            <div className="mr-auto bg-[#091136]/90 text-cyan-400 p-3 rounded-xl border border-cyan-800 flex items-center gap-2 font-rajdhani text-sm">
+                                <Loader2 className="w-4 h-4 animate-spin text-[#00f0ff]" />
+                                <span>Cerberus está processando...</span>
                             </div>
                         )}
                     </div>

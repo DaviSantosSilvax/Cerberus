@@ -205,7 +205,8 @@ async def set_tomada_ar_power(req: PowerRequest):
 @app.post('/api/cerberus/tela')
 async def set_tela_cerberus(req: dict):
     tela = req.get('tela', 'home').strip().lower()
-    await publicar('quarto/tela', tela)
+    await publicar('quarto/tela', tela, retain=True)
+    print(f'LOG MQTT: Tela do Cerberus solicitada -> {tela}')
     return {'ok': True, 'tela': tela}
 
 @app.get('/api/dashboard/quarto')
