@@ -30,23 +30,74 @@ openapi.connect()
 
 groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 
+def obter_status_tuya_lampada() -> bool:
+    try:
+        res = openapi.get(f'/v1.0/iot-03/devices/{DEVICE_LAMPADA_ID}/status')
+        if res.get('success'):
+            for item in res.get('result', []):
+                if item.get('code') == 'switch_led':
+                    return bool(item.get('value', False))
+    except Exception as e:
+        print('Erro ao obter status lampada Tuya:', e)
+    return False
+
+def obter_status_tuya_ar() -> bool:
+    try:
+        res = openapi.get(f'/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}/status')
+        if res.get('success'):
+            for item in res.get('result', []):
+                if item.get('code') == 'switch_1':
+                    return bool(item.get('value', False))
+    except Exception as e:
+        print('Erro ao obter status ar Tuya:', e)
+    return False
+
+async def sincronizar_dispositivos_mqtt():
+    luz = obter_status_tuya_lampada()
+    ar = obter_status_tuya_ar()
+    await publicar('quarto/lampada', 'on' if luz else 'off')
+    await publicar('quarto/ar', 'on' if ar else 'off')
+    print(f'LOG SYNC TUYA -> MQTT: Lampada={"ON" if luz else "OFF"}, Ar={"ON" if ar else "OFF"}')
+
+async def loop_sincronizacao_periodica():
+    while True:
+        try:
+            await asyncio.sleep(45)
+            await sincronizar_dispositivos_mqtt()
+        except Exception as e:
+            print('LOG SYNC LOOP ERRO:', e)
+            await asyncio.sleep(10)
+
 async def processar_comando_mqtt(topico: str, valor: str):
-    ligar = (valor.lower() == 'on')
+    topico = topico.strip()
+    valor = valor.strip().lower()
+    
+    if topico == 'quarto/sincronizar':
+        print('LOG MQTT: ESP32 solicitou sincronizacao de status!')
+        await sincronizar_dispositivos_mqtt()
+        return
+
+    ligar = (valor == 'on')
     if topico == 'quarto/lampada/set':
         resultado = executar_ferramenta('controlar_lampada', {'ligar': ligar})
         print('LOG MQTT LAMPADA:', resultado)
+        # Confirma imediatamente no MQTT para o ESP32 e dashboard
         await publicar('quarto/lampada', 'on' if ligar else 'off')
     elif topico == 'quarto/ar/set':
         resultado = executar_ferramenta('controlar_ar_condicionado', {'ligar': ligar})
         print('LOG MQTT AR:', resultado)
+        # Confirma imediatamente no MQTT para o ESP32 e dashboard
         await publicar('quarto/ar', 'on' if ligar else 'off')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tarefa_mqtt = asyncio.create_task(escutar_mqtt(processar_comando_mqtt))
+    tarefa_sync = asyncio.create_task(loop_sincronizacao_periodica())
+    # Sincroniza o status real na inicialização
+    asyncio.create_task(sincronizar_dispositivos_mqtt())
     yield
     tarefa_mqtt.cancel()
-
+    tarefa_sync.cancel()
 
 app = FastAPI(title='Cerberus Home API', version='1.0.0', lifespan=lifespan)
 

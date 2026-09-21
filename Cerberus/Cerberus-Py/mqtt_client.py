@@ -29,6 +29,7 @@ async def escutar_mqtt(callback_comando=None):
                 await client.subscribe('quarto/ar')
                 await client.subscribe('quarto/lampada/set')
                 await client.subscribe('quarto/ar/set')
+                await client.subscribe('quarto/sincronizar')
                 print('LOG MQTT: Conectado e escutando topicos de status e comandos!')
                 async for msg in client.messages:
                     valor = msg.payload.decode()
@@ -43,7 +44,7 @@ async def escutar_mqtt(callback_comando=None):
                         estado_quarto['lampada'] = valor
                     elif msg.topic.matches('quarto/ar'):
                         estado_quarto['ar'] = valor
-                    elif msg.topic.matches('quarto/lampada/set') or msg.topic.matches('quarto/ar/set'):
+                    elif msg.topic.matches('quarto/lampada/set') or msg.topic.matches('quarto/ar/set') or msg.topic.matches('quarto/sincronizar'):
                         if callback_comando:
                             await callback_comando(topico_str, valor)
         except Exception as e:
