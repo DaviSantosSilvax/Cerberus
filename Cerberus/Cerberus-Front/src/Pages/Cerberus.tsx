@@ -2,7 +2,7 @@ import { useState } from "react";
 import SideBar from "../Components/DashBoard/SideBar";
 import SideBarMobile from "../Components/DashBoard/SideBarMobile";
 import BackGround from "../assets/CerberusBackgroundMobile.jpg";
-import { Bot, Send, Loader2 } from "lucide-react";
+import { Bot, Send, Loader2, Heart } from "lucide-react";
 
 export default function Cerberus() {
     const [inputMessage, setInputMessage] = useState("");
@@ -13,23 +13,22 @@ export default function Cerberus() {
         ? `${import.meta.env.VITE_BACKEND_URL}/chat`
         : `http://${window.location.hostname}:8001/api/chat`;
 
-    const sendMessage = async () => {
-        if (!inputMessage.trim()) return;
+    const sendMessage = async (customMsg?: string) => {
+        const textToSend = customMsg || inputMessage;
+        if (!textToSend.trim()) return;
 
-        const userText = inputMessage;
-        setMessages((prev) => [...prev, { sender: "user", text: userText }]);
-        setInputMessage("");
+        setMessages((prev) => [...prev, { sender: "user", text: textToSend }]);
+        if (!customMsg) setInputMessage("");
         setLoading(true);
 
         try {
             const response = await fetch(BACKEND_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ mensagem: userText }),
+                body: JSON.stringify({ mensagem: textToSend }),
             });
 
             const data = await response.json();
-            // Agora lê data.resposta:
             setMessages((prev) => [...prev, { sender: "bot", text: data.resposta || "Sem resposta." }]);
 
         } catch (error) {
@@ -41,6 +40,10 @@ export default function Cerberus() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const sendCarinho = () => {
+        sendMessage("*faço carinho na sua cabeça, bom garoto!*");
     };
 
     return (
@@ -58,21 +61,41 @@ export default function Cerberus() {
                 <div className="w-full max-w-3xl backdrop-blur-[4px] bg-[#000b425e] border border-[#0066ff8c] shadow-[0_0_35px_rgba(0,183,255,0.2)] rounded-2xl p-4 sm:p-6 flex flex-col gap-4 h-[85vh]">
 
                     {/* CABEÇALHO */}
-                    <div className="flex items-center gap-3 border-b border-[#004bbb8c] pb-3">
-                        <Bot className="w-9 h-9 text-[#39a6ff] drop-shadow-[1px_1px_12px_#39a6ff]" />
-                        <div>
-                            <h1 className="text-xl sm:text-2xl font-semibold font-ibm-plex text-[#ffffff] drop-shadow-[0_0_12px_#008cff]">
-                                ASSISTENTE CERBERUS IA
-                            </h1>
-                            <p className="text-xs font-rajdhani text-cyan-300/70">Comando de Voz & Automação Inteligente</p>
+                    <div className="flex items-center justify-between border-b border-[#004bbb8c] pb-3">
+                        <div className="flex items-center gap-3">
+                            <Bot className="w-9 h-9 text-[#39a6ff] drop-shadow-[1px_1px_12px_#39a6ff]" />
+                            <div>
+                                <h1 className="text-xl sm:text-2xl font-semibold font-ibm-plex text-[#ffffff] drop-shadow-[0_0_12px_#008cff]">
+                                    ASSISTENTE CERBERUS IA
+                                </h1>
+                                <p className="text-xs font-rajdhani text-cyan-300/70">Comando de Voz & Automação Inteligente</p>
+                            </div>
                         </div>
+
+                        <button
+                            onClick={sendCarinho}
+                            disabled={loading}
+                            type="button"
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.3)] transition-all cursor-pointer disabled:opacity-50 text-xs sm:text-sm font-rajdhani font-semibold active:scale-95"
+                            title="Fazer Carinho no Cerberus"
+                        >
+                            <Heart className="w-4 h-4 fill-pink-400 text-pink-400 animate-pulse" />
+                            <span>Fazer Carinho</span>
+                        </button>
                     </div>
 
                     {/* ÁREA DE MENSAGENS (CHAT) */}
                     <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-2">
                         {messages.length === 0 && (
-                            <div className="text-center text-cyan-200/50 my-auto font-rajdhani">
-                                Digite um comando para o assistente Cerberus...
+                            <div className="text-center text-cyan-200/50 my-auto font-rajdhani flex flex-col items-center gap-2">
+                                <span>Digite um comando para o assistente Cerberus...</span>
+                                <button
+                                    onClick={sendCarinho}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/40 text-sm font-rajdhani cursor-pointer transition-all mt-2"
+                                >
+                                    <Heart className="w-4 h-4 fill-pink-400 text-pink-400" />
+                                    <span>Dar carinho no Cerberus agora</span>
+                                </button>
                             </div>
                         )}
 
@@ -96,8 +119,17 @@ export default function Cerberus() {
                         )}
                     </div>
 
-                    {/* CAMPO DE DIGITAÇÃO + BOTÃO */}
+                    {/* CAMPO DE DIGITAÇÃO + BOTÕES */}
                     <div className="flex items-center gap-2 border-t border-[#004bbb8c] pt-3">
+                        <button
+                            onClick={sendCarinho}
+                            disabled={loading}
+                            type="button"
+                            className="p-2.5 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.25)] transition-all cursor-pointer disabled:opacity-50"
+                            title="Fazer Carinho no Cerberus"
+                        >
+                            <Heart className="w-5 h-5 fill-pink-400 text-pink-400" />
+                        </button>
                         <input
                             type="text"
                             value={inputMessage}
@@ -107,7 +139,7 @@ export default function Cerberus() {
                             className="flex-1 bg-[#091136]/80 border border-[#0077ff]/50 rounded-xl px-4 py-2.5 text-white placeholder-cyan-300/40 text-sm outline-none focus:border-[#00f0ff] focus:shadow-[0_0_15px_#00f0ffaa] transition-all font-rajdhani"
                         />
                         <button
-                            onClick={sendMessage}
+                            onClick={() => sendMessage()}
                             disabled={loading}
                             className="p-2.5 rounded-xl bg-[#0051d3] hover:bg-[#0077ff] text-white border border-[#008cff] shadow-[0_0_15px_#0077ff] transition-all cursor-pointer disabled:opacity-50"
                         >
