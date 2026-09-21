@@ -280,6 +280,10 @@ def normalizar_emocao(tag: str) -> str:
 def inferir_emocao_pergunta(pergunta: str) -> str:
     p = unicodedata.normalize('NFKD', pergunta).encode('ascii', 'ignore').decode().lower()
     
+    # 0. Forma Verdadeira / Cerberus Furioso / Provocação Máxima
+    if any(k in p for k in ['forma verdadeira', 'poder real', 'tres cabecas', '3 cabecas', 'besta', 'furia', 'furioso', 'demonio', 'cachorrinho', 'fraco', 'inutil', 'cala a boca', 'chato', 'te odeio', 'idiota', 'bobo', 'falso']):
+        return 'cerberus'
+    
     # 1. Hacker / Terminal / Segurança
     if any(k in p for k in ['hack', 'seguranca', 'terminal', 'ssh', 'senha', 'invadir', 'firewall', 'matrix', 'ip', 'porta']):
         return 'hacker'

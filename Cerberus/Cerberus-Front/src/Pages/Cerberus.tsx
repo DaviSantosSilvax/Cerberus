@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import SideBar from "../Components/DashBoard/SideBar";
 import SideBarMobile from "../Components/DashBoard/SideBarMobile";
 import BackGround from "../assets/CerberusBackgroundMobile.jpg";
-import { Bot, Send, Loader2, Heart, Home, Monitor, Smile, Check } from "lucide-react";
+import { Bot, Send, Loader2, Heart, Home, Monitor, Smile, Check, Flame } from "lucide-react";
 
 export default function Cerberus() {
     const navigate = useNavigate();
@@ -216,6 +216,15 @@ export default function Cerberus() {
                             title="Fazer Carinho no Cerberus"
                         >
                             <Heart className="w-5 h-5 fill-pink-400 text-pink-400" />
+                        </button>
+                        <button
+                            onClick={() => sendMessage("Mostre sua forma verdadeira agora, Cerberus!")}
+                            disabled={loading}
+                            type="button"
+                            className="p-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.25)] transition-all cursor-pointer disabled:opacity-50"
+                            title="Despertar Forma Verdadeira (Cão de 3 Cabeças)"
+                        >
+                            <Flame className="w-5 h-5 fill-red-500 text-red-500 animate-pulse" />
                         </button>
                         <input
                             type="text"
