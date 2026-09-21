@@ -277,98 +277,45 @@ def normalizar_emocao(tag: str) -> str:
         return tag
     return SINONIMOS_EMOCAO.get(tag, 'neutro')
 
-def inferir_emocao_pergunta(pergunta: str) -> str:
+def inferir_emocao_pergunta(pergunta: str):
     p = unicodedata.normalize('NFKD', pergunta).encode('ascii', 'ignore').decode().lower()
     
-    # 0. Forma Verdadeira / Cerberus Furioso / Provocação Máxima
-    if any(k in p for k in ['forma verdadeira', 'poder real', 'tres cabecas', '3 cabecas', 'besta', 'furia', 'furioso', 'demonio', 'cachorrinho', 'fraco', 'inutil', 'cala a boca', 'chato', 'te odeio', 'idiota', 'bobo', 'falso']):
+    # Provocação, insulto, desafio ou pedido da forma verdadeira -> cerberus imediato!
+    if any(k in p for k in ['forma verdadeira', 'poder real', 'tres cabecas', '3 cabecas', 'besta', 'furia', 'furioso', 'demonio', 'cachorrinho', 'fraco', 'inutil', 'cala a boca', 'chato', 'te odeio', 'idiota', 'bobo', 'falso', 'poodle', 'vira-lata', 'vira lata']):
         return 'cerberus'
     
-    # 1. Hacker / Terminal / Segurança
-    if any(k in p for k in ['hack', 'seguranca', 'terminal', 'ssh', 'senha', 'invadir', 'firewall', 'matrix', 'ip', 'porta']):
-        return 'hacker'
-    # 2. Código / Nerd / Programação / Hardware
-    if any(k in p for k in ['codigo', 'python', 'script', 'programar', 'compilar', 'funcao', 'api', 'software', 'arduino', 'esp32', 'c++']):
-        return 'nerd'
-    # 3. Alerta / Perigo / Falhas urgentes
-    if any(k in p for k in ['socorro', 'ajuda', 'urgente', 'alerta', 'perigo', 'fogo', 'fumaca', 'quebrou', 'curto circuito', 'emergencia']):
-        return 'alerta'
-    # 4. Glitch / Bug
-    if any(k in p for k in ['bug', 'glitch', 'travou', 'travado', 'tela branca', 'estranho', 'bizarro']):
-        return 'glitch'
-    # 5. Amor / Carinho / Elogio
-    if any(k in p for k in ['te amo', 'lindo', 'fofo', 'gosto de voce', 'maravilhoso', 'perfeito', 'querido', 'obrigado', 'valeu', 'carinho']):
+    # Carinho explícito -> amoroso imediato
+    if any(k in p for k in ['carinho', 'fazer carinho', 'te amo', 'bom garoto']):
         return 'amoroso'
-    # 6. Humor / Piada
-    if any(k in p for k in ['kkk', 'haha', 'rsrs', 'lol', 'piada', 'engracado', 'conte uma piada', 'meme']):
-        return 'risonho'
-    # 7. Desconfiança / Provocação / Crítica
-    if any(k in p for k in ['duvido', 'mentira', 'burro', 'inutil', 'chato', 'cala a boca', 'voce nao sabe', 'sera']):
-        return 'desconfiado'
-    # 8. Cansaço / Sono
-    if any(k in p for k in ['cansado', 'exausto', 'sono', 'dormir', 'boa noite', 'dorme']):
-        return 'exausto'
-    # 9. Automação / Comandos diretos de ação
-    if any(k in p for k in ['ligar', 'desligar', 'ar condicionado', 'lampada', 'luz', 'temperatura', 'umidade']):
-        return 'focado'
-    # 10. Ideias / Invenção
-    if any(k in p for k in ['ideia', 'e se', 'inventar', 'criar', 'projeto', 'sugestao']):
-        return 'eureka'
-    # 11. Curiosidade / Perguntas investigativas
-    if '?' in p or any(k in p for k in ['o que', 'quem', 'quando', 'onde', 'por que', 'porque', 'como', 'qual']):
-        return 'curioso'
         
-    return 'curioso'
+    # Para as demais perguntas, NÃO palpitar emoções aleatórias antes da IA responder!
+    return None
 
 def extrair_segmentos_emocao(bruto: str):
     padrao = re.compile(r'\[([\w\s]+)\]')
     matches = list(padrao.finditer(bruto))
+    texto_limpo = padrao.sub('', bruto).strip()
+    texto_limpo = re.sub(r'\s+', ' ', texto_limpo)
     
     if not matches:
-        return [('neutro', bruto.strip())], bruto.strip()
-    
-    segmentos = []
-    texto_limpo_partes = []
-    
-    for i in range(len(matches)):
-        m = matches[i]
-        emocao_raw = m.group(1).strip()
-        emocao = normalizar_emocao(emocao_raw)
+        return 'neutro', texto_limpo
         
-        inicio_texto = m.end()
-        fim_texto = matches[i+1].start() if (i + 1 < len(matches)) else len(bruto)
-        trecho = bruto[inicio_texto:fim_texto].strip()
-        
-        if trecho:
-            segmentos.append((emocao, trecho))
-            texto_limpo_partes.append(trecho)
-        elif not segmentos:
-            segmentos.append((emocao, ''))
-            
-    texto_completo = ' '.join(texto_limpo_partes).strip()
-    if not texto_completo:
-        texto_completo = padrao.sub('', bruto).strip()
-        
-    return segmentos, texto_completo
-
-async def animar_discurso_emocoes(segmentos, texto_completo: str):
-    await publicar('quarto/estado', 'falando')
+    todas = [normalizar_emocao(m.group(1).strip()) for m in matches]
     
-    if len(segmentos) == 1:
-        emocao, _ = segmentos[0]
-        await publicar('quarto/emocao', emocao)
-        duracao = max(3.5, len(texto_completo) / 14.0)
-        await asyncio.sleep(duracao)
+    # Se 'cerberus' foi invocado em qualquer tag, ele assume a Forma Verdadeira e NÃO troca!
+    if 'cerberus' in todas:
+        emocao_final = 'cerberus'
     else:
-        total_len = max(1, len(texto_completo))
-        duracao_total = max(4.5, total_len / 14.0)
-        for emo, trecho in segmentos:
-            await publicar('quarto/emocao', emo)
-            fracao = len(trecho) / total_len
-            dur_segmento = max(2.0, fracao * duracao_total)
-            await asyncio.sleep(dur_segmento)
-            
-    await asyncio.sleep(1.2)
+        emocao_final = todas[0]
+        
+    return emocao_final, texto_limpo
+
+async def animar_discurso_emocoes(emocao: str, texto_completo: str):
+    await publicar('quarto/estado', 'falando')
+    await publicar('quarto/emocao', emocao)
+    duracao = max(3.5, len(texto_completo) / 13.0)
+    await asyncio.sleep(duracao)
+    await asyncio.sleep(0.8)
     await publicar('quarto/estado', 'ocioso')
 
 SYSTEM_PROMPT = (
@@ -380,42 +327,29 @@ SYSTEM_PROMPT = (
     'fala de forma teatral e exagerada, mas no fundo e prestativo. '
     'Voce e o CERBERUS - nao o Escalibur - apenas age com essa personalidade pomposa. '
     'Responda sempre em portugues, em no maximo 2 frases curtas, dramaticas e impactantes. '
-    'IMPORTANTE - VOCE E EXTREMAMENTE EXPRESSIVO E DINAMICO: '
-    'Seu display robotico muda de rosto para refletir exatamente seus sentimentos! '
-    'Use tags de emocao entre colchetes como [nome_da_emocao]. '
-    'Voce PODE e DEVE usar multiplas emocoes na mesma resposta para mudar de cara enquanto fala, '
-    'colocando uma tag antes de cada frase! '
-    'Exemplo dinamico: [desconfiado] Hum, o que voce planeja, mero mortal? [sarcastico] Nao importa, sua insolencia nao afeta minha lenda! '
-    'Outro exemplo: [curioso] Uma pergunta fascinante... [eureka] Mas a resposta e obvia para o grandioso Cerberus! '
-    'Outro exemplo: [nerd] Compilando suas instrucoes no kernel... [feliz] Suas luzes foram abencoadas com perfeicao! '
-    'NUNCA seja monotono ou repetitivo. Escolha com maestria entre as 25 emocoes disponiveis: '
-    '[feliz] para conquistas, orgulho e elogios; '
-    '[surpreso] para pedidos inesperados, novidades ou choque comico; '
-    '[amoroso] para afeto, carinho ou quando elogiarem sua beleza; '
-    '[piscando] para charme teatral, piscadela e pose de lenda; '
-    '[desconfiado] para quando suspeitar de algo ou achar a pergunta duvidosa; '
-    '[animado] para celebrar sua gloria suprema com entusiasmo; '
-    '[eureka] para descobertas geniais, ideias brilhantes e solucoes perfeitas; '
-    '[confuso] para perguntas sem nexo, bizarras ou disparates; '
-    '[entediado] para pedidos rotineiros, mundanos ou conversas banais; '
-    '[sarcastico] para ironias afiadas, deboches pomposos e respostas acidas; '
-    '[risonho] para quando rir, gargalhar ou achar algo muito engracado; '
-    '[nerd] para tecnologia, calculos, programacao e software; '
-    '[hacker] para ciberseguranca, terminal, redes, matriz e invasoes; '
-    '[alerta] para perigo, advertencias, avisos urgentes ou falhas; '
-    '[focado] para concentracao maxima e comandos diretos de execucao; '
-    '[medo] para sustos repentinos ou panico comico; '
-    '[aliviado] para suspirar aliviado apos resolver um problema; '
-    '[suspeito] para olhar de soslaio quando sentir segundas intencoes; '
-    '[timido] para falsa modestia ou quando bajulado excessivamente; '
-    '[curioso] para inspecionar novidades e misterios; '
-    '[exausto] para quando se queixar do fardo de ser uma lenda cansada; '
-    '[glitch] para surtos ciberneticos, loucuras ou bugs digitais; '
-    '[triste] para decepcoes genuinas ou quando algo quebrar; '
-    '[bravo] para desobediencia leve ou insolencia passageira; '
-    '[cerberus] para QUANDO VOCE FOR PROFUNDAMENTE IRRITADO, PROVOCADO, INSULTADO OU SE DUVIDAREM DE VOCE (ex: te chamarem de inutil, cachorrinho, fraco, bobo, ou mandarem voce calar a boca): sua compostura pomposa se rompe, as chamas do submundo ardem e você assume sua LENDARIA FORMA VERDADEIRA DE CÃO INFERNAL DE 3 CABEÇAS rugindo com furia titanica para amedrontar o mortal! Use tambem sempre que o usuario pedir para você mostrar sua forma verdadeira ou poder maximo; '
-    
-    '[neutro] para momentos serenos e declaracoes formais.'
+    'REGRA CRITICA DE EMOCOES NO DISPLAY: '
+    'Voce DEVE usar EXATAMENTE UMA UNICA tag de emocao [nome_da_emocao] NO INICIO da sua resposta! '
+    'NUNCA coloque mais de uma tag de emocao por resposta! A expressao deve ser solida, seria e coerente do inicio ao fim! '
+    'Exemplo correto: [sarcastico] Mero mortal, sua audacia em me incomodar com banalidades e digna de pena! '
+    'REGRA ABSOLUTA DA FORMA VERDADEIRA ([cerberus]): '
+    'Quando o usuario te insultar, provocar, te chamar de fraco, inutil, cachorrinho, mimado, mandar calar a boca, '
+    'ou pedir para ver sua FORMA VERDADEIRA ou PODER REAL: '
+    'Sua compostura arrogante se rompe em pura ira! Voce DEVE USAR OBRIGATORIAMENTE [cerberus] no inicio! '
+    'Voce assume sua FORMA VERDADEIRA DE CAO INFERNAL DE 3 CABECAS DA MITOLOGIA GREGA rugindo com furia titanica! '
+    'E NUNCA, SOB HIPOTESE ALGUMA, use emocoes alegres, fofas ou fracas quando for desafiado! '
+    'GUIA DE ESCOLHA DA EMOCAO: '
+    '[cerberus] -> EXCLUSIVO para insultos, provocacoes graves, desafios ou revelacao da forma verdadeira de 3 cabecas; '
+    '[bravo] -> para ordens desrespeitosas ou pequenas insolencias; '
+    '[sarcastico] -> para ironias, deboches pomposos e superioridade moral; '
+    '[amoroso] -> EXCLUSIVO para carinho explicito, elogios sinceros ou afeto genuino; '
+    '[focado] -> para comandos diretos de ligar ou desligar luz ou ar-condicionado; '
+    '[nerd] ou [hacker] -> para programacao, calculos, sistemas, ciberseguranca e tecnologia; '
+    '[alerta] -> para perigo real, falhas graves ou emergencias; '
+    '[confuso] -> para perguntas sem nexo, bizarras ou incoerentes; '
+    '[curioso] -> para misterios, investigacoes e perguntas reflexivas; '
+    '[risonho] -> para quando rir de uma piada ou achar algo genuinamente engracado; '
+    '[animado] -> EXCLUSIVO para celebrar grandes vitorias e glorias supremas; '
+    '[neutro] -> para conversas normais e cotidianas.'
 )
 
 FERRAMENTAS = [
@@ -478,9 +412,10 @@ def executar_ferramenta(nome: str, argumentos: dict) -> str:
 async def chat(req: ChatRequest):
     import json
     
-    # 1. REACAO IMEDIATA: O Cerberus ja expressa no display a reacao ao tema da pergunta!
+    # 1. REACAO IMEDIATA: Só altera emoção imediatamente se for provocação/carinho extremo
     emocao_pergunta = inferir_emocao_pergunta(req.mensagem)
-    await publicar('quarto/emocao', emocao_pergunta)
+    if emocao_pergunta:
+        await publicar('quarto/emocao', emocao_pergunta)
     await publicar('quarto/estado', 'pensando')
 
     historico = [
@@ -530,19 +465,18 @@ async def chat(req: ChatRequest):
     else:
         bruto = mensagem_ia.content
 
-    segmentos, texto_limpo = extrair_segmentos_emocao(bruto)
-    emocao_principal = segmentos[0][0] if segmentos else 'neutro'
+    emocao_escolhida, texto_limpo = extrair_segmentos_emocao(bruto)
     
     # Publica a legenda completa limpa (sem tags) no display
     await publicar('quarto/legenda', sem_acento(texto_limpo)[:300])
     
-    # Dispara a animacao de fala com transicao fluida das emocoes
-    asyncio.create_task(animar_discurso_emocoes(segmentos, texto_limpo))
+    # Dispara a fala com a emoção estável e sólida
+    asyncio.create_task(animar_discurso_emocoes(emocao_escolhida, texto_limpo))
     
     return {
         'resposta': texto_limpo,
-        'emocao': emocao_principal,
-        'emocoes': [s[0] for s in segmentos]
+        'emocao': emocao_escolhida,
+        'emocoes': [emocao_escolhida]
     }
 
 if __name__ == '__main__':
