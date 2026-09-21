@@ -30,11 +30,23 @@ openapi.connect()
 
 groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 
+async def processar_comando_mqtt(topico: str, valor: str):
+    ligar = (valor.lower() == 'on')
+    if topico == 'quarto/lampada/set':
+        resultado = executar_ferramenta('controlar_lampada', {'ligar': ligar})
+        print('LOG MQTT LAMPADA:', resultado)
+        await publicar('quarto/lampada', 'on' if ligar else 'off')
+    elif topico == 'quarto/ar/set':
+        resultado = executar_ferramenta('controlar_ar_condicionado', {'ligar': ligar})
+        print('LOG MQTT AR:', resultado)
+        await publicar('quarto/ar', 'on' if ligar else 'off')
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tarefa_mqtt = asyncio.create_task(escutar_mqtt())
+    tarefa_mqtt = asyncio.create_task(escutar_mqtt(processar_comando_mqtt))
     yield
     tarefa_mqtt.cancel()
+
 
 app = FastAPI(title='Cerberus Home API', version='1.0.0', lifespan=lifespan)
 
