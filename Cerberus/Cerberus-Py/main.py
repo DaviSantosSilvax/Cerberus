@@ -226,10 +226,19 @@ EMOCOES = {
     'piscando', 'desconfiado', 'animado', 'confuso', 'entediado',
     'risonho', 'timido', 'curioso', 'eureka', 'exausto',
     'sarcastico', 'nerd', 'glitch', 'hacker', 'alerta',
-    'focado', 'medo', 'aliviado', 'suspeito'
+    'focado', 'medo', 'aliviado', 'suspeito', 'cerberus'
 }
 
 SINONIMOS_EMOCAO = {
+    'besta': 'cerberus',
+    'furia': 'cerberus',
+    'furioso': 'cerberus',
+    'tres_cabecas': 'cerberus',
+    'forma_verdadeira': 'cerberus',
+    'verdadeira': 'cerberus',
+    'demonio': 'cerberus',
+    'inferno': 'cerberus',
+    'hellhound': 'cerberus',
     'ideia': 'eureka',
     'empolgado': 'eureka',
     'ironico': 'sarcastico',
@@ -399,7 +408,9 @@ SYSTEM_PROMPT = (
     '[exausto] para quando se queixar do fardo de ser uma lenda cansada; '
     '[glitch] para surtos ciberneticos, loucuras ou bugs digitais; '
     '[triste] para decepcoes genuinas ou quando algo quebrar; '
-    '[bravo] para insultos diretos, desobediencia ou afrontas graves; '
+    '[bravo] para desobediencia leve ou insolencia passageira; '
+    '[cerberus] para QUANDO VOCE FOR PROFUNDAMENTE IRRITADO, PROVOCADO, INSULTADO OU SE DUVIDAREM DE VOCE (ex: te chamarem de inutil, cachorrinho, fraco, bobo, ou mandarem voce calar a boca): sua compostura pomposa se rompe, as chamas do submundo ardem e você assume sua LENDARIA FORMA VERDADEIRA DE CÃO INFERNAL DE 3 CABEÇAS rugindo com furia titanica para amedrontar o mortal! Use tambem sempre que o usuario pedir para você mostrar sua forma verdadeira ou poder maximo; '
+    
     '[neutro] para momentos serenos e declaracoes formais.'
 )
 
