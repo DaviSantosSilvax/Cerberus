@@ -55,8 +55,8 @@ def obter_status_tuya_ar() -> bool:
 async def sincronizar_dispositivos_mqtt():
     luz = obter_status_tuya_lampada()
     ar = obter_status_tuya_ar()
-    await publicar('quarto/lampada', 'on' if luz else 'off')
-    await publicar('quarto/ar', 'on' if ar else 'off')
+    await publicar('quarto/lampada', 'on' if luz else 'off', retain=True)
+    await publicar('quarto/ar', 'on' if ar else 'off', retain=True)
     print(f'LOG SYNC TUYA -> MQTT: Lampada={"ON" if luz else "OFF"}, Ar={"ON" if ar else "OFF"}')
 
 async def loop_sincronizacao_periodica():
@@ -81,13 +81,11 @@ async def processar_comando_mqtt(topico: str, valor: str):
     if topico == 'quarto/lampada/set':
         resultado = executar_ferramenta('controlar_lampada', {'ligar': ligar})
         print('LOG MQTT LAMPADA:', resultado)
-        # Confirma imediatamente no MQTT para o ESP32 e dashboard
-        await publicar('quarto/lampada', 'on' if ligar else 'off')
+        await publicar('quarto/lampada', 'on' if ligar else 'off', retain=True)
     elif topico == 'quarto/ar/set':
         resultado = executar_ferramenta('controlar_ar_condicionado', {'ligar': ligar})
         print('LOG MQTT AR:', resultado)
-        # Confirma imediatamente no MQTT para o ESP32 e dashboard
-        await publicar('quarto/ar', 'on' if ligar else 'off')
+        await publicar('quarto/ar', 'on' if ligar else 'off', retain=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -135,20 +133,25 @@ def check_tuya_response(response: dict):
 @app.get('/api/lampada/status')
 def get_lampada_status():
     res = openapi.get(f'/v1.0/iot-03/devices/{DEVICE_LAMPADA_ID}')
+    res_status = openapi.get(f'/v1.0/iot-03/devices/{DEVICE_LAMPADA_ID}/status')
     if res.get('success'):
         result = res.get('result', {})
+        status_list = res_status.get('result', []) if res_status.get('success') else result.get('status', [])
         return {
             'online': result.get('online', False),
             'name': result.get('name', 'Lumi'),
-            'status': result.get('status', [])
+            'status': status_list
         }
     return {'online': False, 'error': res}
 
 @app.post('/api/lampada/power')
-def set_lampada_power(req: PowerRequest):
+async def set_lampada_power(req: PowerRequest):
     commands = [{'code': 'switch_led', 'value': req.state}]
     res = openapi.post(f'/v1.0/iot-03/devices/{DEVICE_LAMPADA_ID}/commands', {'commands': commands})
-    return check_tuya_response(res)
+    ret = check_tuya_response(res)
+    if ret.get('success', False):
+        await publicar('quarto/lampada', 'on' if req.state else 'off', retain=True)
+    return ret
 
 @app.post('/api/lampada/white')
 def set_lampada_white(req: WhiteRequest):
@@ -179,20 +182,25 @@ def set_lampada_mode(req: dict):
 @app.get('/api/ar-condicionado/status')
 def get_tomada_ar_status():
     res = openapi.get(f'/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}')
+    res_status = openapi.get(f'/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}/status')
     if res.get('success'):
         result = res.get('result', {})
+        status_list = res_status.get('result', []) if res_status.get('success') else result.get('status', [])
         return {
             'online': result.get('online', False),
             'name': result.get('name', 'Lumi ar condicionado'),
-            'status': result.get('status', [])
+            'status': status_list
         }
     return {'online': False, 'error': res}
 
 @app.post('/api/ar-condicionado/power')
-def set_tomada_ar_power(req: PowerRequest):
+async def set_tomada_ar_power(req: PowerRequest):
     commands = [{'code': 'switch_1', 'value': req.state}]
     res = openapi.post(f'/v1.0/iot-03/devices/{DEVICE_TOMADA_AR_ID}/commands', {'commands': commands})
-    return check_tuya_response(res)
+    ret = check_tuya_response(res)
+    if ret.get('success', False):
+        await publicar('quarto/ar', 'on' if req.state else 'off', retain=True)
+    return ret
 
 @app.get('/api/dashboard/quarto')
 def get_status_quarto():
@@ -478,6 +486,10 @@ async def chat(req: ChatRequest):
             nome_ferramenta = tool_call.function.name
             argumentos = json.loads(tool_call.function.arguments)
             resultado = executar_ferramenta(nome_ferramenta, argumentos)
+            if nome_ferramenta == 'controlar_lampada':
+                await publicar('quarto/lampada', 'on' if argumentos.get('ligar') else 'off', retain=True)
+            elif nome_ferramenta == 'controlar_ar_condicionado':
+                await publicar('quarto/ar', 'on' if argumentos.get('ligar') else 'off', retain=True)
             historico.append({
                 'role': 'tool',
                 'tool_call_id': tool_call.id,

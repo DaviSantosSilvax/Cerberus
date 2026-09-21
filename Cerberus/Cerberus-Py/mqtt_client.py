@@ -51,9 +51,9 @@ async def escutar_mqtt(callback_comando=None):
             print('LOG MQTT: erro na conexao, tentando de novo em 5s:', e)
             await asyncio.sleep(5)
 
-async def publicar(topico: str, mensagem: str):
+async def publicar(topico: str, mensagem: str, retain: bool = False):
     async with aiomqtt.Client(
         hostname=MQTT_HOST, port=MQTT_PORT,
         username=MQTT_USER, password=MQTT_PASS,
     ) as client:
-        await client.publish(topico, mensagem)
+        await client.publish(topico, mensagem, retain=retain)

@@ -24,6 +24,12 @@ export default function Iluminação() {
                 if (data.online !== undefined) {
                     setIsOnline(data.online);
                 }
+                if (data.status && Array.isArray(data.status)) {
+                    const switchItem = data.status.find((s: any) => s.code === 'switch_led');
+                    if (switchItem !== undefined) {
+                        setPower(Boolean(switchItem.value));
+                    }
+                }
             } catch (err) {
                 console.error(err);
                 setIsOnline(false);
