@@ -2,16 +2,47 @@ import { useState } from "react";
 import SideBar from "../Components/DashBoard/SideBar";
 import SideBarMobile from "../Components/DashBoard/SideBarMobile";
 import BackGround from "../assets/CerberusBackgroundMobile.jpg";
-import { Bot, Send, Loader2, Heart } from "lucide-react";
+import { Bot, Send, Loader2, Heart, Home, Smile, Check } from "lucide-react";
 
 export default function Cerberus() {
     const [inputMessage, setInputMessage] = useState("");
     const [messages, setMessages] = useState<Array<{ sender: "user" | "bot"; text: string }>>([]);
     const [loading, setLoading] = useState(false);
+    const [displayMode, setDisplayMode] = useState<"rosto" | "home">("rosto");
+    const [displayLoading, setDisplayLoading] = useState<boolean>(false);
+    const [displayStatusMsg, setDisplayStatusMsg] = useState<string | null>(null);
 
     const BACKEND_URL = import.meta.env.VITE_BACKEND_URL
         ? `${import.meta.env.VITE_BACKEND_URL}/chat`
         : `http://${window.location.hostname}:8001/api/chat`;
+
+    const mudarTelaDisplay = async (tela: "home" | "rosto") => {
+        setDisplayLoading(true);
+        try {
+            const baseUrl = import.meta.env.VITE_BACKEND_URL
+                ? import.meta.env.VITE_BACKEND_URL.replace(/\/chat$/, "")
+                : `http://${window.location.hostname}:8001/api`;
+
+            const res = await fetch(`${baseUrl}/cerberus/tela`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tela }),
+            });
+
+            if (res.ok) {
+                setDisplayMode(tela);
+                setDisplayStatusMsg(`Display Cerberus alternado para ${tela === "home" ? "HOME 🏠" : "ROSTO 🤖"}!`);
+            } else {
+                setDisplayStatusMsg("Erro ao alterar tela no display.");
+            }
+        } catch (error) {
+            console.error(error);
+            setDisplayStatusMsg("Falha de conexão com o backend.");
+        } finally {
+            setDisplayLoading(false);
+            setTimeout(() => setDisplayStatusMsg(null), 3500);
+        }
+    };
 
     const sendMessage = async (customMsg?: string) => {
         const textToSend = customMsg || inputMessage;
@@ -72,17 +103,59 @@ export default function Cerberus() {
                             </div>
                         </div>
 
-                        <button
-                            onClick={sendCarinho}
-                            disabled={loading}
-                            type="button"
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.3)] transition-all cursor-pointer disabled:opacity-50 text-xs sm:text-sm font-rajdhani font-semibold active:scale-95"
-                            title="Fazer Carinho no Cerberus"
-                        >
-                            <Heart className="w-4 h-4 fill-pink-400 text-pink-400 animate-pulse" />
-                            <span>Fazer Carinho</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {displayMode === "rosto" ? (
+                                <button
+                                    onClick={() => mudarTelaDisplay("home")}
+                                    disabled={displayLoading}
+                                    type="button"
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all cursor-pointer text-xs sm:text-sm font-rajdhani font-semibold active:scale-95 disabled:opacity-50"
+                                    title="Alternar Display do Cerberus para a Tela Home"
+                                >
+                                    {displayLoading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                                    ) : (
+                                        <Home className="w-4 h-4 text-cyan-400" />
+                                    )}
+                                    <span>Ir p/ Home (Display)</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => mudarTelaDisplay("rosto")}
+                                    disabled={displayLoading}
+                                    type="button"
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] transition-all cursor-pointer text-xs sm:text-sm font-rajdhani font-semibold active:scale-95 disabled:opacity-50"
+                                    title="Voltar Display para o Rosto do Cerberus"
+                                >
+                                    {displayLoading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                                    ) : (
+                                        <Smile className="w-4 h-4 text-indigo-400" />
+                                    )}
+                                    <span>Ver Rosto (Display)</span>
+                                </button>
+                            )}
+
+                            <button
+                                onClick={sendCarinho}
+                                disabled={loading}
+                                type="button"
+                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.3)] transition-all cursor-pointer disabled:opacity-50 text-xs sm:text-sm font-rajdhani font-semibold active:scale-95"
+                                title="Fazer Carinho no Cerberus"
+                            >
+                                <Heart className="w-4 h-4 fill-pink-400 text-pink-400 animate-pulse" />
+                                <span>Fazer Carinho</span>
+                            </button>
+                        </div>
                     </div>
+
+                    {/* TOAST / FEEDBACK DO DISPLAY */}
+                    {displayStatusMsg && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#091136]/95 border border-cyan-500/60 rounded-xl text-cyan-300 text-xs font-rajdhani shadow-[0_0_15px_#00f0ff44] animate-pulse self-end">
+                            <Check className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>{displayStatusMsg}</span>
+                        </div>
+                    )}
 
                     {/* ÁREA DE MENSAGENS (CHAT) */}
                     <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-2">
@@ -103,8 +176,8 @@ export default function Cerberus() {
                             <div
                                 key={index}
                                 className={`max-w-[80%] p-3 rounded-xl font-rajdhani text-sm sm:text-base ${msg.sender === "user"
-                                        ? "ml-auto bg-[#0051d3]/80 text-white border border-[#008cff]"
-                                        : "mr-auto bg-[#091136]/90 text-cyan-100 border border-cyan-800"
+                                    ? "ml-auto bg-[#0051d3]/80 text-white border border-[#008cff]"
+                                    : "mr-auto bg-[#091136]/90 text-cyan-100 border border-cyan-800"
                                     }`}
                             >
                                 {msg.text}

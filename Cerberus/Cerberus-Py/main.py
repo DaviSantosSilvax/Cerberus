@@ -202,6 +202,12 @@ async def set_tomada_ar_power(req: PowerRequest):
         await publicar('quarto/ar', 'on' if req.state else 'off', retain=True)
     return ret
 
+@app.post('/api/cerberus/tela')
+async def set_tela_cerberus(req: dict):
+    tela = req.get('tela', 'home').strip().lower()
+    await publicar('quarto/tela', tela)
+    return {'ok': True, 'tela': tela}
+
 @app.get('/api/dashboard/quarto')
 def get_status_quarto():
     return estado_quarto
