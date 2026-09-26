@@ -24,7 +24,7 @@ DEVICE_LAMPADA_ID = os.getenv('DEVICE_LAMPADA_ID')
 DEVICE_TOMADA_AR_ID = os.getenv('DEVICE_TOMADA_AR_ID')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL', 'llama-3.2-11b-vision-preview')
+GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL', 'qwen/qwen3.8-27b')
 GO2RTC_CAMERA_QUARTO_URL = os.getenv('GO2RTC_CAMERA_QUARTO_URL', 'http://100.127.0.33:1984/api/frame.jpeg?src=camera_quarto')
 GO2RTC_CAMERA_QUARTO_MJPEG_URL = os.getenv('GO2RTC_CAMERA_QUARTO_MJPEG_URL', 'http://100.127.0.33:1984/api/stream.mjpeg?src=camera_quarto')
 
