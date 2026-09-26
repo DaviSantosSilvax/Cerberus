@@ -213,10 +213,64 @@ async def set_tela_cerberus(req: dict):
 def get_status_quarto():
     return estado_quarto
 
-@app.post('/api/lampada-quarto/power')
+@app.get('/api/lampada-quarto/power')
 async def set_lampada_quarto_power(req: PowerRequest):
     await publicar('quarto/lampada', 'on' if req.state else 'off')
     return {'ok': True}
+
+TAPO_RTSP_URL = os.getenv('TAPO_RTSP_URL', 'rtsp://Cerberus:Acesso%401@192.168.1.103:554/stream1')
+
+def gerar_frames_tapo():
+    import cv2
+    import time
+    
+    cap = cv2.VideoCapture(TAPO_RTSP_URL)
+    if not cap.isOpened():
+        print(f"ERRO: Nao foi possivel conectar a camera no RTSP: {TAPO_RTSP_URL}")
+
+    while True:
+        try:
+            if not cap.isOpened():
+                time.sleep(1)
+                cap = cv2.VideoCapture(TAPO_RTSP_URL)
+                continue
+
+            sucesso, frame = cap.read()
+            if not sucesso or frame is None:
+                time.sleep(0.5)
+                cap.release()
+                cap = cv2.VideoCapture(TAPO_RTSP_URL)
+                continue
+
+            # Redimensiona levemente para suavidade de streaming se necessario
+            ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+            if not ret:
+                continue
+
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        except Exception as e:
+            print("Erro no stream da camera Tapo:", e)
+            time.sleep(1)
+
+@app.get('/api/camera/stream')
+def get_camera_stream():
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        gerar_frames_tapo(),
+        media_type='multipart/x-mixed-replace; boundary=frame'
+    )
+
+@app.get('/api/camera/status')
+def get_camera_status():
+    return {
+        'model': 'TP-Link Tapo TC60',
+        'resolution': '1080p Full HD',
+        'ip': '192.168.1.103',
+        'protocol': 'RTSP (Stream 1)',
+        'online': True
+    }
+
 
 def sem_acento(texto: str) -> str:
     return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode()
