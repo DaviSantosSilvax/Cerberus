@@ -1,0 +1,17 @@
+# Banco de fotos locais (contém fotos de pessoas)
+Bd_Fotos/
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# Ambientes virtuais e pacotes
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Cache do InsightFace / ONNX
+.insightface/
+models/
+embeddings_cache.pkl

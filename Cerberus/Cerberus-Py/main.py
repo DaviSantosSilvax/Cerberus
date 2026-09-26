@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import re
 import unicodedata
@@ -13,6 +14,26 @@ from tuya_connector import TuyaOpenAPI
 from groq import AsyncGroq
 from mqtt_client import escutar_mqtt, publicar, estado_quarto
 import httpx
+import cv2
+import numpy as np
+
+# Inicialização do Reconhecimento Facial (InsightFace)
+RECONHECIMENTO_FACIAL_DIR = os.getenv(
+    'RECONHECIMENTO_FACIAL_DIR',
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'Cerberus-ReconhecimentoF'))
+)
+if os.path.exists(RECONHECIMENTO_FACIAL_DIR) and RECONHECIMENTO_FACIAL_DIR not in sys.path:
+    sys.path.append(RECONHECIMENTO_FACIAL_DIR)
+
+reconhecedor_facial = None
+try:
+    from reconhecimento import SistemaReconhecimentoFacial
+    pasta_fotos_bd = os.path.join(RECONHECIMENTO_FACIAL_DIR, 'Bd_Fotos')
+    reconhecedor_facial = SistemaReconhecimentoFacial(pasta_fotos=pasta_fotos_bd)
+    print("LOG RECONHECIMENTO FACIAL: Inicializado com sucesso!")
+except Exception as e:
+    print(f"LOG RECONHECIMENTO FACIAL AVISO: Não foi possível inicializar ({e})")
+
 
 load_dotenv()
 
@@ -85,11 +106,11 @@ async def processar_comando_mqtt(topico: str, valor: str):
 
     ligar = (valor == 'on')
     if topico == 'quarto/lampada/set':
-        resultado = executar_ferramenta('controlar_lampada', {'ligar': ligar})
+        resultado = await executar_ferramenta('controlar_lampada', {'ligar': ligar})
         print('LOG MQTT LAMPADA:', resultado)
         await publicar('quarto/lampada', 'on' if ligar else 'off', retain=True)
     elif topico == 'quarto/ar/set':
-        resultado = executar_ferramenta('controlar_ar_condicionado', {'ligar': ligar})
+        resultado = await executar_ferramenta('controlar_ar_condicionado', {'ligar': ligar})
         print('LOG MQTT AR:', resultado)
         await publicar('quarto/ar', 'on' if ligar else 'off', retain=True)
 
@@ -460,8 +481,49 @@ SYSTEM_PROMPT = (
     '[neutro] -> para conversas normais e cotidianas.'
 )
 
+RECONHECIMENTO_FACIAL_URL = os.getenv('RECONHECIMENTO_FACIAL_URL', 'http://100.127.0.33:8002/api/reconhecer')
+
+async def identificar_pessoas_no_frame(jpeg_bytes: bytes = None) -> str:
+    """Executa o algoritmo do InsightFace chamando o serviço local no seu PC (via Tailscale) ou via módulo local."""
+    # 1. Tenta requisição HTTP para o serviço local via Tailscale
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.get(RECONHECIMENTO_FACIAL_URL)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("mensagem", "Sem retorno do reconhecimento.")
+    except Exception as e:
+        print(f"LOG RECONHECIMENTO REMOTE AVISO: {e}")
+
+    # 2. Fallback caso esteja rodando localmente na mesma máquina
+    if reconhecedor_facial:
+        try:
+            if not jpeg_bytes:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    resp = await client.get(GO2RTC_CAMERA_QUARTO_URL)
+                    if resp.status_code == 200 and resp.content:
+                        jpeg_bytes = resp.content
+            
+            if jpeg_bytes:
+                np_arr = np.frombuffer(jpeg_bytes, np.uint8)
+                img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if img is not None:
+                    resultados = reconhecedor_facial.identificar_faces(img)
+                    nomes = [r['nome'] for r in resultados]
+                    conhecidos = list(set([n for n in nomes if n != "Desconhecido"]))
+                    if conhecidos:
+                        return f"Reconhecimento Facial (InsightFace): {', '.join(conhecidos)} está presente na imagem."
+                    elif resultados:
+                        return f"Reconhecimento Facial (InsightFace): {len(resultados)} pessoa(s) vista(s), mas não cadastrada(s)."
+                    else:
+                        return "Nenhuma face encontrada na imagem."
+        except Exception as e:
+            print(f"LOG RECONHECIMENTO LOCAL ERRO: {e}")
+
+    return "Serviço de reconhecimento facial local inacessível no momento."
+
 async def analisar_camera_quarto_com_visao(prompt_pergunta: str = None) -> str:
-    """Busca o snapshot da câmera, converte para base64 e envia para o modelo de Visão da Groq API."""
+    """Busca o snapshot da câmera, faz reconhecimento facial (InsightFace) e analisa com o modelo de Visão da Groq API."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(GO2RTC_CAMERA_QUARTO_URL)
@@ -469,10 +531,16 @@ async def analisar_camera_quarto_com_visao(prompt_pergunta: str = None) -> str:
                 return "Não foi possível acessar a câmera do quarto no momento (câmera ou PC de casa pode estar desligado)."
             jpeg_bytes = resp.content
 
+        # 1. Executa Reconhecimento Facial (InsightFace) via Tailscale / local
+        info_reconhecimento = await identificar_pessoas_no_frame(jpeg_bytes)
+
+        # 2. Converte para base64 para análise do modelo de visão Groq
         b64_img = base64.b64encode(jpeg_bytes).decode('utf-8')
         data_uri = f"data:image/jpeg;base64,{b64_img}"
 
-        pergunta = prompt_pergunta.strip() if prompt_pergunta and prompt_pergunta.strip() else "Descreva detalhadamente o que você está vendo no quarto em português."
+        pergunta = prompt_pergunta.strip() if prompt_pergunta and prompt_pergunta.strip() else "Descreva o que você está vendo no quarto em português e mencione a pessoa presente."
+
+        prompt_completo = f"Analise esta imagem em tempo real da câmera do quarto. Informação de Reconhecimento Facial prévia: [{info_reconhecimento}]. Pergunta: {pergunta}"
 
         res_vision = await groq_client.chat.completions.create(
             model=GROQ_VISION_MODEL,
@@ -480,7 +548,7 @@ async def analisar_camera_quarto_com_visao(prompt_pergunta: str = None) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"Analise esta imagem em tempo real da câmera do quarto. {pergunta}"},
+                        {"type": "text", "text": prompt_completo},
                         {"type": "image_url", "image_url": {"url": data_uri}}
                     ]
                 }
@@ -531,7 +599,7 @@ FERRAMENTAS = [
         'type': 'function',
         'function': {
             'name': 'ver_camera_quarto',
-            'description': 'Captura uma foto em tempo real da câmera do quarto e a analisa visualmente usando visão computacional. Use SEMPRE que o usuário perguntar o que você está vendo, se tem alguém no quarto, pedir para descrever o ambiente ou fazer uma pergunta visual sobre o quarto.',
+            'description': 'Captura uma foto em tempo real da câmera do quarto e a analisa visualmente usando visão computacional e reconhecimento facial. Use SEMPRE que o usuário perguntar o que você está vendo, se tem alguém no quarto, pedir para descrever o ambiente ou fazer uma pergunta visual sobre o quarto.',
             'parameters': {
                 'type': 'object',
                 'properties': {
@@ -540,6 +608,18 @@ FERRAMENTAS = [
                         'description': 'Pergunta ou instrução detalhada sobre o que analisar visualmente na foto do quarto.'
                     }
                 },
+                'required': []
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'identificar_quem_esta_no_quarto',
+            'description': 'Usa o reconhecimento facial de alta precisão (InsightFace) para identificar EXATAMENTE qual pessoa cadastrada (ex: Davi) está no quarto diante da câmera. Use quando o usuário perguntar "quem sou eu?", "quem está no quarto?", "com quem você está falando?" ou pedir identificação facial.',
+            'parameters': {
+                'type': 'object',
+                'properties': {},
                 'required': []
             }
         }
@@ -566,6 +646,8 @@ async def executar_ferramenta(nome: str, argumentos: dict) -> str:
     if nome == 'ver_camera_quarto':
         prompt = argumentos.get('prompt_pergunta', '')
         return await analisar_camera_quarto_com_visao(prompt)
+    if nome == 'identificar_quem_esta_no_quarto':
+        return await identificar_pessoas_no_frame()
     return 'Ferramenta desconhecida.'
 
 @app.post('/api/chat')
