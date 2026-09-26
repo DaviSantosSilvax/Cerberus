@@ -2,6 +2,7 @@ import os
 import asyncio
 import re
 import unicodedata
+import base64
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
@@ -23,6 +24,7 @@ DEVICE_LAMPADA_ID = os.getenv('DEVICE_LAMPADA_ID')
 DEVICE_TOMADA_AR_ID = os.getenv('DEVICE_TOMADA_AR_ID')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_VISION_MODEL = os.getenv('GROQ_VISION_MODEL', 'llama-3.2-11b-vision-preview')
 GO2RTC_CAMERA_QUARTO_URL = os.getenv('GO2RTC_CAMERA_QUARTO_URL', 'http://100.127.0.33:1984/api/frame.jpeg?src=camera_quarto')
 GO2RTC_CAMERA_QUARTO_MJPEG_URL = os.getenv('GO2RTC_CAMERA_QUARTO_MJPEG_URL', 'http://100.127.0.33:1984/api/stream.mjpeg?src=camera_quarto')
 
@@ -458,6 +460,38 @@ SYSTEM_PROMPT = (
     '[neutro] -> para conversas normais e cotidianas.'
 )
 
+async def analisar_camera_quarto_com_visao(prompt_pergunta: str = None) -> str:
+    """Busca o snapshot da câmera, converte para base64 e envia para o modelo de Visão da Groq API."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(GO2RTC_CAMERA_QUARTO_URL)
+            if resp.status_code != 200 or not resp.content:
+                return "Não foi possível acessar a câmera do quarto no momento (câmera ou PC de casa pode estar desligado)."
+            jpeg_bytes = resp.content
+
+        b64_img = base64.b64encode(jpeg_bytes).decode('utf-8')
+        data_uri = f"data:image/jpeg;base64,{b64_img}"
+
+        pergunta = prompt_pergunta.strip() if prompt_pergunta and prompt_pergunta.strip() else "Descreva detalhadamente o que você está vendo no quarto em português."
+
+        res_vision = await groq_client.chat.completions.create(
+            model=GROQ_VISION_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Analise esta imagem em tempo real da câmera do quarto. {pergunta}"},
+                        {"type": "image_url", "image_url": {"url": data_uri}}
+                    ]
+                }
+            ],
+            max_tokens=300
+        )
+        return res_vision.choices[0].message.content
+    except Exception as e:
+        print(f"LOG VISÃO ERRO: {repr(e)}")
+        return "Não foi possível acessar ou analisar a câmera do quarto no momento."
+
 FERRAMENTAS = [
     {
         'type': 'function',
@@ -492,10 +526,27 @@ FERRAMENTAS = [
                 'required': ['ligar']
             }
         }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'ver_camera_quarto',
+            'description': 'Captura uma foto em tempo real da câmera do quarto e a analisa visualmente usando visão computacional. Use SEMPRE que o usuário perguntar o que você está vendo, se tem alguém no quarto, pedir para descrever o ambiente ou fazer uma pergunta visual sobre o quarto.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'prompt_pergunta': {
+                        'type': 'string',
+                        'description': 'Pergunta ou instrução detalhada sobre o que analisar visualmente na foto do quarto.'
+                    }
+                },
+                'required': []
+            }
+        }
     }
 ]
 
-def executar_ferramenta(nome: str, argumentos: dict) -> str:
+async def executar_ferramenta(nome: str, argumentos: dict) -> str:
     if nome == 'controlar_lampada':
         ligar = argumentos.get('ligar', False)
         commands = [{'code': 'switch_led', 'value': ligar}]
@@ -512,6 +563,9 @@ def executar_ferramenta(nome: str, argumentos: dict) -> str:
         if res.get('success'):
             return f'Ar-condicionado {estado} com sucesso.'
         return f'Erro ao controlar o ar-condicionado: {res.get("msg", "erro desconhecido")}'
+    if nome == 'ver_camera_quarto':
+        prompt = argumentos.get('prompt_pergunta', '')
+        return await analisar_camera_quarto_com_visao(prompt)
     return 'Ferramenta desconhecida.'
 
 @app.post('/api/chat')
@@ -548,7 +602,7 @@ async def chat(req: ChatRequest):
         for tool_call in mensagem_ia.tool_calls:
             nome_ferramenta = tool_call.function.name
             argumentos = json.loads(tool_call.function.arguments)
-            resultado = executar_ferramenta(nome_ferramenta, argumentos)
+            resultado = await executar_ferramenta(nome_ferramenta, argumentos)
             if nome_ferramenta == 'controlar_lampada':
                 await publicar('quarto/lampada', 'on' if argumentos.get('ligar') else 'off', retain=True)
             elif nome_ferramenta == 'controlar_ar_condicionado':
@@ -558,6 +612,7 @@ async def chat(req: ChatRequest):
                 'tool_call_id': tool_call.id,
                 'content': resultado
             })
+
         try:
             resposta_final = await groq_client.chat.completions.create(
                 model=os.getenv('GROQ_MODEL'),
