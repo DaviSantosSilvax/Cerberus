@@ -137,8 +137,10 @@ def get_lampada_status():
     if res.get('success'):
         result = res.get('result', {})
         status_list = res_status.get('result', []) if res_status.get('success') else result.get('status', [])
+        # Lâmpadas inteligentes Tuya em standby retornam online: false na nuvem, mas estão operacionais se a lista de status existir
+        is_online = result.get('online', False) or (isinstance(status_list, list) and len(status_list) > 0)
         return {
-            'online': result.get('online', False),
+            'online': is_online,
             'name': result.get('name', 'Lumi'),
             'status': status_list
         }
