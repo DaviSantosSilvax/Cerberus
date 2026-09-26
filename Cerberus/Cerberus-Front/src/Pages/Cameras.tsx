@@ -2,19 +2,19 @@ import { useState, useRef } from 'react'
 import SideBar from '../Components/DashBoard/SideBar'
 import SideBarMobile from '../Components/DashBoard/SideBarMobile'
 import Background from '../assets/CerberusBackground.png'
-import { Video, ShieldCheck, RefreshCw, Maximize, Wifi, Cpu, Camera } from 'lucide-react'
+import { Video, ShieldCheck, RefreshCw, Maximize, Wifi, Cpu, Camera, Radio } from 'lucide-react'
 
 export default function Cameras() {
+    const [offline, setOffline] = useState(false)
     const [reloadKey, setReloadKey] = useState(0)
-    const [streamQuality, setStreamQuality] = useState<'stream1' | 'stream2'>('stream1')
-    const [hasError, setHasError] = useState(false)
     const videoContainerRef = useRef<HTMLDivElement>(null)
 
     const baseUrl = import.meta.env.VITE_BACKEND_URL
         ? import.meta.env.VITE_BACKEND_URL.replace(/\/chat$/, '')
         : `http://${window.location.hostname}:8001/api`
 
-    const streamUrl = `${baseUrl}/camera/stream?quality=${streamQuality}&t=${reloadKey}`
+    // Rota de streaming contínuo MJPEG (sem polling no frontend)
+    const mjpegStreamUrl = `${baseUrl}/dashboard/camera-quarto/stream?t=${reloadKey}`
 
     const toggleFullscreen = () => {
         if (videoContainerRef.current) {
@@ -27,9 +27,10 @@ export default function Cameras() {
     }
 
     const handleReload = () => {
-        setHasError(false)
+        setOffline(false)
         setReloadKey(prev => prev + 1)
     }
+
 
     return (
         <div className="flex min-h-screen text-white font-sans">
@@ -55,8 +56,8 @@ export default function Cameras() {
                                     Câmeras de Segurança
                                 </h1>
                                 <p className="text-sm text-cyan-300/80 flex items-center gap-2 mt-0.5">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                                    TP-Link Tapo TC60 1080p — Sistema Cerberus
+                                    <span className={`w-2.5 h-2.5 rounded-full ${offline ? 'bg-amber-500' : 'bg-emerald-400 animate-ping'}`}></span>
+                                    Câmera Quarto — via go2rtc & Tailscale
                                 </p>
                             </div>
                         </div>
@@ -66,7 +67,7 @@ export default function Cameras() {
                             <button
                                 onClick={handleReload}
                                 className="flex items-center gap-2 px-4 py-2 bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/40 rounded-xl text-cyan-300 text-sm font-medium transition-all shadow-[0_0_10px_rgba(0,240,255,0.15)] active:scale-95"
-                                title="Recarregar Feed de Vídeo"
+                                title="Recarregar Imagem"
                             >
                                 <RefreshCw className="w-4 h-4" />
                                 <span>Recarregar</span>
@@ -95,9 +96,7 @@ export default function Cameras() {
                                 <div className="absolute top-4 left-4 z-20 flex flex-wrap items-center gap-2">
                                     <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-emerald-500/40 text-xs font-semibold text-emerald-400 shadow-md">
                                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        <span>REC</span>
-                                        <span className="text-emerald-300/50">|</span>
-                                        <span>LIVE</span>
+                                        <span>LIVE STREAM</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-cyan-500/30 text-xs text-cyan-300">
                                         <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
@@ -107,27 +106,27 @@ export default function Cameras() {
 
                                 <div className="absolute top-4 right-4 z-20">
                                     <span className="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-blue-500/30 text-xs font-mono text-blue-300">
-                                        1080p FHD • 554/RTSP
+                                        MJPEG • 1080p FHD
                                     </span>
                                 </div>
 
-                                {/* Imagem de Stream MJPEG */}
-                                {!hasError ? (
+                                {/* Imagem de Stream Contínuo MJPEG */}
+                                {!offline ? (
                                     <img
                                         key={reloadKey}
-                                        src={streamUrl}
-                                        alt="Feed Câmera Tapo TC60"
-                                        className="w-full h-full max-h-[560px] object-contain bg-black"
-                                        onError={() => setHasError(true)}
+                                        src={mjpegStreamUrl}
+                                        alt="Câmera do quarto (MJPEG Stream)"
+                                        className="w-full h-full max-h-[560px] object-contain bg-black transition-opacity duration-200"
+                                        onError={() => setOffline(true)}
+                                        onLoad={() => setOffline(false)}
                                     />
                                 ) : (
                                     <div className="flex flex-col items-center justify-center p-8 text-center gap-4 text-cyan-300/80">
                                         <Camera className="w-16 h-16 text-cyan-500/40 animate-bounce" />
                                         <div className="space-y-1">
-                                            <p className="text-lg font-medium text-white">Aguardando feed da Câmera Tapo...</p>
+                                            <p className="text-lg font-medium text-white">Câmera indisponível (PC desligado?)</p>
                                             <p className="text-xs text-cyan-300/60 max-w-md">
-                                                Conectando ao RTSP em <code className="text-cyan-400">192.168.1.103:554</code>.
-                                                Certifique-se de que a câmera está ligada à mesma rede do backend.
+                                                Verifique se o seu PC local está ligado e se o <code className="text-cyan-400">go2rtc</code> está rodando no Tailscale (<code className="text-cyan-400">100.127.0.33:1984</code>).
                                             </p>
                                         </div>
                                         <button
@@ -139,11 +138,12 @@ export default function Cameras() {
                                     </div>
                                 )}
 
+
                                 {/* Barra inferior de informações da imagem */}
                                 <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex justify-between items-center text-xs text-cyan-200/80 font-mono">
-                                    <span>IP: 192.168.1.103</span>
-                                    <span>Usuário: Cerberus</span>
-                                    <span>Fuso: GMT-3</span>
+                                    <span>Stream: camera_quarto</span>
+                                    <span>Tailscale IP: 100.127.0.33</span>
+                                    <span>Intervalo: 1.5s</span>
                                 </div>
                             </div>
                         </div>
@@ -164,55 +164,41 @@ export default function Cameras() {
                                         <span className="font-semibold text-white">Tapo TC60</span>
                                     </div>
                                     <div className="flex justify-between pb-2 border-b border-cyan-500/20">
-                                        <span className="text-slate-400">Fabricante:</span>
-                                        <span className="text-white">TP-Link</span>
+                                        <span className="text-slate-400">Origem:</span>
+                                        <span className="text-white">go2rtc / Tailscale</span>
                                     </div>
                                     <div className="flex justify-between pb-2 border-b border-cyan-500/20">
                                         <span className="text-slate-400">Resolução:</span>
                                         <span className="text-emerald-400 font-semibold">1080p (Full HD)</span>
                                     </div>
                                     <div className="flex justify-between pb-2 border-b border-cyan-500/20">
-                                        <span className="text-slate-400">Protocolo:</span>
-                                        <span className="text-cyan-300 font-mono">RTSP / H.264</span>
+                                        <span className="text-slate-400">Endpoint:</span>
+                                        <span className="text-cyan-300 font-mono truncate max-w-[120px]">/dashboard/camera-quarto</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-slate-400">Rede Wi-Fi:</span>
                                         <span className="text-white flex items-center gap-1">
-                                            <Wifi className="w-3.5 h-3.5 text-emerald-400" /> 2.4 GHz
+                                            <Wifi className="w-3.5 h-3.5 text-emerald-400" /> Casa (2.4 GHz)
                                         </span>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Card de Configuração de Stream */}
+                            {/* Card de Atualização do Feed */}
                             <div className="bg-slate-950/60 backdrop-blur-md border border-blue-500/30 rounded-2xl p-4 flex flex-col gap-3">
-                                <h3 className="text-sm font-semibold text-blue-300 uppercase tracking-wider">
-                                    Qualidade do Stream
+                                <h3 className="text-sm font-semibold text-blue-300 uppercase tracking-wider flex items-center gap-2">
+                                    <Radio className="w-4 h-4 text-blue-400" />
+                                    Status da Conexão
                                 </h3>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        onClick={() => { setStreamQuality('stream1'); handleReload(); }}
-                                        className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
-                                            streamQuality === 'stream1'
-                                                ? 'bg-cyan-600 text-slate-950 shadow-[0_0_12px_rgba(0,240,255,0.4)]'
-                                                : 'bg-slate-900/80 text-cyan-300 hover:bg-slate-800'
-                                        }`}
-                                    >
-                                        1080p High
-                                    </button>
-                                    <button
-                                        onClick={() => { setStreamQuality('stream2'); handleReload(); }}
-                                        className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all ${
-                                            streamQuality === 'stream2'
-                                                ? 'bg-cyan-600 text-slate-950 shadow-[0_0_12px_rgba(0,240,255,0.4)]'
-                                                : 'bg-slate-900/80 text-cyan-300 hover:bg-slate-800'
-                                        }`}
-                                    >
-                                        360p Fast
-                                    </button>
+                                <div className={`p-3 rounded-xl text-xs font-semibold text-center border ${
+                                    offline 
+                                        ? 'bg-amber-950/60 border-amber-500/40 text-amber-300' 
+                                        : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                                }`}>
+                                    {offline ? '⚠️ Câmera indisponível (PC desligado?)' : '🟢 Câmera Online (Polling 1.5s)'}
                                 </div>
                                 <p className="text-[11px] text-slate-400 mt-1">
-                                    Use 360p se a conexão estiver lenta ou se houver travamentos no stream.
+                                    Busca automática de snapshot no backend a cada 1.5 segundos com cache-busting.
                                 </p>
                             </div>
 
@@ -225,5 +211,6 @@ export default function Cameras() {
         </div>
     )
 }
+
 
 

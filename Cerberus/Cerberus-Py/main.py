@@ -5,6 +5,7 @@ import unicodedata
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from tuya_connector import TuyaOpenAPI
@@ -23,6 +24,7 @@ DEVICE_TOMADA_AR_ID = os.getenv('DEVICE_TOMADA_AR_ID')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GO2RTC_CAMERA_QUARTO_URL = os.getenv('GO2RTC_CAMERA_QUARTO_URL', 'http://100.127.0.33:1984/api/frame.jpeg?src=camera_quarto')
+GO2RTC_CAMERA_QUARTO_MJPEG_URL = os.getenv('GO2RTC_CAMERA_QUARTO_MJPEG_URL', 'http://100.127.0.33:1984/api/stream.mjpeg?src=camera_quarto')
 
 if not ACCESS_ID or not ACCESS_SECRET:
     raise ValueError('ERRO: TUYA_ACCESS_ID e TUYA_ACCESS_SECRET devem ser definidos no arquivo .env')
@@ -229,6 +231,39 @@ async def get_camera_quarto_snapshot():
     except (httpx.RequestError, httpx.HTTPStatusError, Exception) as e:
         print(f"LOG GO2RTC CAMERA QUARTO ERRO: {e}")
         raise HTTPException(status_code=503, detail="câmera indisponível no momento")
+
+@app.get('/api/dashboard/camera-quarto/stream')
+async def get_camera_quarto_mjpeg_stream():
+    """Repassa o stream MJPEG contínuo vindo do go2rtc (via Tailscale) para o front-end"""
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        req = client.build_request("GET", GO2RTC_CAMERA_QUARTO_MJPEG_URL)
+        resp = await client.send(req, stream=True)
+
+        if resp.status_code != 200:
+            await resp.aclose()
+            await client.aclose()
+            raise HTTPException(status_code=503, detail="câmera indisponível no momento")
+
+        media_type = resp.headers.get("content-type", "multipart/x-mixed-replace; boundary=frame")
+
+        async def mjpeg_generator():
+            try:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+            except Exception as e:
+                print(f"LOG GO2RTC MJPEG DISCONNECT: {e}")
+            finally:
+                await resp.aclose()
+                await client.aclose()
+
+        return StreamingResponse(mjpeg_generator(), media_type=media_type)
+
+    except (httpx.RequestError, httpx.HTTPStatusError, Exception) as e:
+        print(f"LOG GO2RTC STREAM MJPEG ERRO: {e}")
+        await client.aclose()
+        raise HTTPException(status_code=503, detail="câmera indisponível no momento")
+
 
 @app.get('/api/lampada-quarto/power')
 async def set_lampada_quarto_power(req: PowerRequest):
