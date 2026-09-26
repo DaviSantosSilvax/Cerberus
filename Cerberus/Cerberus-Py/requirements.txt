@@ -3,3 +3,4 @@ uvicorn
 python-dotenv
 tuya-connector-python
 pydantic
+httpx

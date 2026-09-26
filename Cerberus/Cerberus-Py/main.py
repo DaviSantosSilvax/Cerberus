@@ -4,12 +4,13 @@ import re
 import unicodedata
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from tuya_connector import TuyaOpenAPI
 from groq import AsyncGroq
 from mqtt_client import escutar_mqtt, publicar, estado_quarto
+import httpx
 
 load_dotenv()
 
@@ -21,6 +22,7 @@ DEVICE_LAMPADA_ID = os.getenv('DEVICE_LAMPADA_ID')
 DEVICE_TOMADA_AR_ID = os.getenv('DEVICE_TOMADA_AR_ID')
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GO2RTC_CAMERA_QUARTO_URL = os.getenv('GO2RTC_CAMERA_QUARTO_URL', 'http://100.127.0.33:1984/api/frame.jpeg?src=camera_quarto')
 
 if not ACCESS_ID or not ACCESS_SECRET:
     raise ValueError('ERRO: TUYA_ACCESS_ID e TUYA_ACCESS_SECRET devem ser definidos no arquivo .env')
@@ -214,6 +216,19 @@ async def set_tela_cerberus(req: dict):
 @app.get('/api/dashboard/quarto')
 def get_status_quarto():
     return estado_quarto
+
+@app.get('/api/dashboard/camera-quarto')
+async def get_camera_quarto_snapshot():
+    """Busca o snapshot JPEG mais recente do go2rtc (via Tailscale) e retorna para o front-end"""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(GO2RTC_CAMERA_QUARTO_URL)
+            if resp.status_code == 200 and resp.content:
+                return Response(content=resp.content, media_type="image/jpeg")
+            raise HTTPException(status_code=503, detail="câmera indisponível no momento")
+    except (httpx.RequestError, httpx.HTTPStatusError, Exception) as e:
+        print(f"LOG GO2RTC CAMERA QUARTO ERRO: {e}")
+        raise HTTPException(status_code=503, detail="câmera indisponível no momento")
 
 @app.get('/api/lampada-quarto/power')
 async def set_lampada_quarto_power(req: PowerRequest):
