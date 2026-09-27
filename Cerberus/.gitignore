@@ -26,3 +26,8 @@ logs/
 .vscode/
 .idea/
 .DS_Store
+
+# Hardware / ESP32
+Esp32/
+esp32/
+*.ino

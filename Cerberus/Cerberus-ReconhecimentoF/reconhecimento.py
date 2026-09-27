@@ -49,31 +49,38 @@ class SistemaReconhecimentoFacial:
     def carregar_banco_de_faces(self, forcar_reindexacao=False):
         """
         Varre a pasta de fotos, detecta as faces com InsightFace e armazena os embeddings.
-        Utiliza cache local para garantir inicializações instantâneas.
+        Utiliza cache local inteligente que reindexa automaticamente se novas fotos forem adicionadas.
         """
         if not os.path.exists(self.pasta_fotos):
             os.makedirs(self.pasta_fotos, exist_ok=True)
             print(f"[AVISO] Pasta '{self.pasta_fotos}' criada. Coloque as fotos no formato nome_(numero).jpg nela.")
             return
 
-        # Tenta carregar do cache salvo em disco se disponível
-        if not forcar_reindexacao and os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'rb') as f:
-                    data = pickle.load(f)
-                    self.banco_embeddings = data.get('embeddings', {})
-                    self.banco_medias = data.get('medias', {})
-                    print(f"[Cache] Pessoas carregadas do cache: {list(self.banco_medias.keys())}")
-                    return
-            except Exception as e:
-                print(f"[Cache] Erro ao carregar cache ({e}). Reindexando fotos...")
-
-        print(f"[Indexador] Processando fotos da pasta '{self.pasta_fotos}'...")
         extensoes = ('*.jpg', '*.jpeg', '*.png', '*.bmp', '*.webp')
         arquivos = []
         for ext in extensoes:
             arquivos.extend(glob.glob(os.path.join(self.pasta_fotos, ext)))
             arquivos.extend(glob.glob(os.path.join(self.pasta_fotos, ext.upper())))
+
+        arquivos_basenames = sorted([os.path.basename(f) for f in arquivos if not os.path.basename(f).startswith('.')])
+
+        # Tenta carregar do cache salvo em disco se disponível e se os arquivos não mudaram
+        if not forcar_reindexacao and os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'rb') as f:
+                    data = pickle.load(f)
+                    cached_arquivos = sorted(data.get('arquivos', []))
+                    if cached_arquivos == arquivos_basenames:
+                        self.banco_embeddings = data.get('embeddings', {})
+                        self.banco_medias = data.get('medias', {})
+                        print(f"[Cache] Pessoas carregadas do cache: {list(self.banco_medias.keys())}")
+                        return
+                    else:
+                        print(f"[Cache] Novas fotos detectadas em '{self.pasta_fotos}'! Atualizando índice...")
+            except Exception as e:
+                print(f"[Cache] Erro ao carregar cache ({e}). Reindexando fotos...")
+
+        print(f"[Indexador] Processando fotos da pasta '{self.pasta_fotos}'...")
 
         if not arquivos:
             print(f"[AVISO] Nenhuma foto encontrada na pasta '{self.pasta_fotos}'.")
@@ -119,7 +126,7 @@ class SistemaReconhecimentoFacial:
         # Salva em cache para rápido carregamento posterior
         try:
             with open(self.cache_file, 'wb') as f:
-                pickle.dump({'embeddings': self.banco_embeddings, 'medias': self.banco_medias}, f)
+                pickle.dump({'embeddings': self.banco_embeddings, 'medias': self.banco_medias, 'arquivos': arquivos_basenames}, f)
             print(f"[Cache] Embeddings salvos em '{self.cache_file}'.")
         except Exception as e:
             print(f"[Cache] Erro ao gravar cache: {e}")
