@@ -762,11 +762,33 @@ async def voz(audio: UploadFile = File(...)):
         await publicar('quarto/legenda', 'Audio muito curto ou vazio')
         return {'status': 'erro', 'detalhe': 'audio_vazio'}
 
-    # 1b. O ESP32 envia um WAV completo (header de 44 bytes). Se vier com header,
-    #     extrai só o PCM, já que o header é remontado logo abaixo.
+    # 1b. Extrai apenas o PCM bruto se o ESP32 tiver enviado com header WAV
     if conteudo[:4] == b'RIFF' and conteudo[8:12] == b'WAVE':
         pos_data = conteudo.find(b'data')
         conteudo = conteudo[pos_data + 8:] if pos_data > 0 else conteudo[44:]
+
+    # 1c. Análise de volume e Normalização Automática (AGC Inteligente)
+    import array
+    amostras = array.array('h')
+    amostras.frombytes(conteudo)
+    
+    if len(amostras) > 0:
+        pico = max(abs(s) for s in amostras)
+        rms = int((sum(s * s for s in amostras) / len(amostras)) ** 0.5)
+        print(f'LOG VOZ: Audio recebido: {len(amostras)} amostras ({len(amostras)/16000:.1f}s), Pico={pico}, RMS={rms}')
+        
+        # Se o áudio tiver voz mas volume baixo, normaliza automaticamente para clareza total
+        if 100 < pico < 20000:
+            ganho = min(12.0, 24000.0 / max(pico, 1))
+            for i in range(len(amostras)):
+                v = int(amostras[i] * ganho)
+                amostras[i] = max(-32768, min(32767, v))
+            print(f'LOG VOZ: Normalizacao aplicada ({ganho:.1f}x). Novo Pico={max(abs(s) for s in amostras)}')
+            conteudo = amostras.tobytes()
+        elif pico <= 100:
+            print('LOG VOZ: Audio detectado como silencio puro (Pico <= 100).')
+            await publicar('quarto/estado', 'ocioso')
+            return {'status': 'ok', 'transcricao': ''}
 
     # 2. Monta o WAV válido em memória
     wav_bytes = montar_wav_raw(conteudo)
