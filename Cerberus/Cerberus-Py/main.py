@@ -6,7 +6,7 @@ import unicodedata
 import base64
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -649,19 +649,20 @@ async def executar_ferramenta(nome: str, argumentos: dict) -> str:
         return await identificar_pessoas_no_frame()
     return 'Ferramenta desconhecida.'
 
-@app.post('/api/chat')
-async def chat(req: ChatRequest):
+async def processar_mensagem(mensagem: str) -> dict:
+    """Processa uma mensagem do usuário através do agente Styx (Groq + tools).
+    Reutilizada por /api/chat e /api/voz."""
     import json
-    
+
     # 1. REACAO IMEDIATA: Só altera emoção imediatamente se for provocação/carinho extremo
-    emocao_pergunta = inferir_emocao_pergunta(req.mensagem)
+    emocao_pergunta = inferir_emocao_pergunta(mensagem)
     if emocao_pergunta:
         await publicar('quarto/emocao', emocao_pergunta)
     await publicar('quarto/estado', 'pensando')
 
     historico = [
         {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': req.mensagem},
+        {'role': 'user', 'content': mensagem},
     ]
 
     try:
@@ -708,18 +709,96 @@ async def chat(req: ChatRequest):
         bruto = mensagem_ia.content
 
     emocao_escolhida, texto_limpo = extrair_segmentos_emocao(bruto)
-    
+
     # Publica a legenda completa limpa (sem tags) no display
     await publicar('quarto/legenda', sem_acento(texto_limpo)[:300])
-    
+
     # Dispara a fala com a emoção estável e sólida
     asyncio.create_task(animar_discurso_emocoes(emocao_escolhida, texto_limpo))
-    
+
     return {
         'resposta': texto_limpo,
         'emocao': emocao_escolhida,
         'emocoes': [emocao_escolhida]
     }
+
+
+@app.post('/api/chat')
+async def chat(req: ChatRequest):
+    return await processar_mensagem(req.mensagem)
+
+
+def montar_wav_raw(dados_pcm: bytes, sample_rate: int = 16000, bits: int = 16, canais: int = 1) -> bytes:
+    """Monta um arquivo WAV válido a partir de dados PCM brutos (como enviado pelo ESP32)."""
+    import struct
+    data_size = len(dados_pcm)
+    byte_rate = sample_rate * canais * bits // 8
+    block_align = canais * bits // 8
+    
+    header = struct.pack('<4sI4s4sIHHIIHH4sI',
+        b'RIFF',
+        36 + data_size,
+        b'WAVE',
+        b'fmt ',
+        16,           # Subchunk1Size
+        1,            # AudioFormat (PCM)
+        canais,       # NumChannels
+        sample_rate,  # SampleRate
+        byte_rate,    # ByteRate
+        block_align,  # BlockAlign
+        bits,         # BitsPerSample
+        b'data',
+        data_size
+    )
+    return header + dados_pcm
+
+
+@app.post('/api/voz')
+async def voz(audio: UploadFile = File(...)):
+    """Recebe áudio PCM raw do ESP32, transcreve via Groq Whisper e processa com o agente Styx."""
+    # 1. Lê o áudio enviado
+    conteudo = await audio.read()
+    if not conteudo or len(conteudo) < 100:
+        await publicar('quarto/legenda', 'Audio muito curto ou vazio')
+        return {'status': 'erro', 'detalhe': 'audio_vazio'}
+
+    # 1b. O ESP32 envia um WAV completo (header de 44 bytes). Se vier com header,
+    #     extrai só o PCM, já que o header é remontado logo abaixo.
+    if conteudo[:4] == b'RIFF' and conteudo[8:12] == b'WAVE':
+        pos_data = conteudo.find(b'data')
+        conteudo = conteudo[pos_data + 8:] if pos_data > 0 else conteudo[44:]
+
+    # 2. Monta o WAV válido em memória
+    wav_bytes = montar_wav_raw(conteudo)
+
+    # 3. Transcreve via Groq Whisper (whisper-large-v3-turbo)
+    try:
+        transcricao = await groq_client.audio.transcriptions.create(
+            model='whisper-large-v3-turbo',
+            # Tupla (nome, conteúdo): o SDK só reconhece o tipo .wav pelo nome do
+            # arquivo (BytesIO com .filename era ignorado e o Groq respondia 400).
+            file=('audio.wav', wav_bytes),
+            language='pt',
+            response_format='text',
+        )
+        texto = transcricao.strip() if transcricao else ''
+        print(f'LOG VOZ: Transcricao: "{texto}"')
+    except Exception as e:
+        print(f'LOG VOZ TRANSCRICAO ERRO: {repr(e)}')
+        await publicar('quarto/estado', 'ocioso')
+        await publicar('quarto/legenda', 'Nao consegui entender, tenta de novo')
+        return {'status': 'erro', 'detalhe': 'transcricao_falhou'}
+
+    if not texto:
+        await publicar('quarto/estado', 'ocioso')
+        await publicar('quarto/legenda', 'Nao consegui entender, tenta de novo')
+        return {'status': 'erro', 'detalhe': 'audio_vazio'}
+
+    # 4. Processa o texto transcrito com o MESMO agente do /api/chat
+    asyncio.create_task(processar_mensagem(texto))
+
+    # 5. Responde imediatamente (a resposta real chega via MQTT)
+    return {'status': 'ok', 'transcricao': texto}
 
 if __name__ == '__main__':
     import uvicorn
