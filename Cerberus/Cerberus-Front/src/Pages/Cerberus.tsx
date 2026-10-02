@@ -68,7 +68,7 @@ export default function Cerberus() {
             console.error(error);
             setMessages((prev) => [
                 ...prev,
-                { sender: "bot", text: "Erro ao conectar com o assistente Cerberus." }
+                { sender: "bot", text: "Erro ao conectar com o assistente Styx." }
             ]);
         } finally {
             setLoading(false);
@@ -99,7 +99,7 @@ export default function Cerberus() {
                             <Bot className="w-9 h-9 text-[#39a6ff] drop-shadow-[1px_1px_12px_#39a6ff]" />
                             <div>
                                 <h1 className="text-xl sm:text-2xl font-semibold font-ibm-plex text-[#ffffff] drop-shadow-[0_0_12px_#008cff]">
-                                    ASSISTENTE CERBERUS IA
+                                    STYX
                                 </h1>
                                 <p className="text-xs font-rajdhani text-cyan-300/70">Comando de Voz & Automação Inteligente</p>
                             </div>
@@ -157,7 +157,7 @@ export default function Cerberus() {
                                 disabled={loading}
                                 type="button"
                                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.3)] transition-all cursor-pointer disabled:opacity-50 text-xs sm:text-sm font-rajdhani font-semibold active:scale-95"
-                                title="Fazer Carinho no Cerberus"
+                                title="Fazer Carinho no Styx"
                             >
                                 <Heart className="w-4 h-4 fill-pink-400 text-pink-400 animate-pulse" />
                                 <span>Carinho</span>
@@ -177,13 +177,13 @@ export default function Cerberus() {
                     <div className="flex-1 overflow-y-auto flex flex-col gap-3 p-2">
                         {messages.length === 0 && (
                             <div className="text-center text-cyan-200/50 my-auto font-rajdhani flex flex-col items-center gap-2">
-                                <span>Digite um comando para o assistente Cerberus...</span>
+                                <span>Digite um comando para o assistente Styx...</span>
                                 <button
                                     onClick={sendCarinho}
                                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/40 text-sm font-rajdhani cursor-pointer transition-all mt-2"
                                 >
                                     <Heart className="w-4 h-4 fill-pink-400 text-pink-400" />
-                                    <span>Dar carinho no Cerberus agora</span>
+                                    <span>Dar carinho no Styx agora</span>
                                 </button>
                             </div>
                         )}
@@ -201,7 +201,7 @@ export default function Cerberus() {
                         {loading && (
                             <div className="mr-auto bg-[#091136]/90 text-cyan-400 p-3 rounded-xl border border-cyan-800 flex items-center gap-2 font-rajdhani text-sm">
                                 <Loader2 className="w-4 h-4 animate-spin text-[#00f0ff]" />
-                                <span>Cerberus está processando...</span>
+                                <span>Styx está processando...</span>
                             </div>
                         )}
                     </div>
@@ -213,12 +213,12 @@ export default function Cerberus() {
                             disabled={loading}
                             type="button"
                             className="p-2.5 rounded-xl bg-pink-600/20 hover:bg-pink-600/40 text-pink-300 border border-pink-500/50 shadow-[0_0_15px_rgba(236,72,153,0.25)] transition-all cursor-pointer disabled:opacity-50"
-                            title="Fazer Carinho no Cerberus"
+                            title="Fazer Carinho no Styx"
                         >
                             <Heart className="w-5 h-5 fill-pink-400 text-pink-400" />
                         </button>
                         <button
-                            onClick={() => sendMessage("Mostre sua forma verdadeira agora, Cerberus!")}
+                            onClick={() => sendMessage("Mostre sua forma verdadeira agora, Styx!")}
                             disabled={loading}
                             type="button"
                             className="p-2.5 rounded-xl bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.25)] transition-all cursor-pointer disabled:opacity-50"
@@ -231,7 +231,7 @@ export default function Cerberus() {
                             value={inputMessage}
                             onChange={(e) => setInputMessage(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                            placeholder="Pergunte ou ordene algo ao Cerberus..."
+                            placeholder="Pergunte ou ordene algo ao Styx..."
                             className="flex-1 bg-[#091136]/80 border border-[#0077ff]/50 rounded-xl px-4 py-2.5 text-white placeholder-cyan-300/40 text-sm outline-none focus:border-[#00f0ff] focus:shadow-[0_0_15px_#00f0ffaa] transition-all font-rajdhani"
                         />
                         <button

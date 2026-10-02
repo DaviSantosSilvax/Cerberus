@@ -782,17 +782,20 @@ async def voz(audio: UploadFile = File(...)):
             response_format='text',
         )
         texto = transcricao.strip() if transcricao else ''
-        print(f'LOG VOZ: Transcricao: "{texto}"')
+        print(f'LOG VOZ: Transcricao bruta: "{texto}"')
     except Exception as e:
         print(f'LOG VOZ TRANSCRICAO ERRO: {repr(e)}')
         await publicar('quarto/estado', 'ocioso')
         await publicar('quarto/legenda', 'Nao consegui entender, tenta de novo')
         return {'status': 'erro', 'detalhe': 'transcricao_falhou'}
 
-    if not texto:
+    # Se a transcricao for vazia ou apenas pontuacao (ex: ".", "!", "?"), ignora
+    texto_letras = ''.join(c for c in texto if c.isalnum())
+    if not texto_letras or texto.lower() in ['e aí', 'e ai', 'obrigado', 'obrigado.', 'você']:
+        # Se o áudio for muito silencioso ou for alucinação típica de silêncio
+        print(f'LOG VOZ: Audio sem fala detectada ("{texto}"), retornando ao repouso.')
         await publicar('quarto/estado', 'ocioso')
-        await publicar('quarto/legenda', 'Nao consegui entender, tenta de novo')
-        return {'status': 'erro', 'detalhe': 'audio_vazio'}
+        return {'status': 'ok', 'transcricao': ''}
 
     # 4. Processa o texto transcrito com o MESMO agente do /api/chat
     asyncio.create_task(processar_mensagem(texto))
