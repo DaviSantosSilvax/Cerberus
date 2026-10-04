@@ -784,12 +784,12 @@ async def gerar_audio_fala_wav(texto: str) -> bytes:
     # 2. Voz Neural Masculina Profunda (Edge-TTS com tom grave e ritmo natural)
     try:
         import edge_tts
-        # pitch='-6Hz' deixa a voz encorpada, masculina e firme; rate='+3%' dá ritmo dinâmico e natural
+        # pt-BR-AntonioNeural com pitch='-8Hz' dá uma voz masculina encorpada e imponente
         communicate = edge_tts.Communicate(
             texto,
             "pt-BR-AntonioNeural",
-            pitch="-6Hz",
-            rate="+3%"
+            pitch="-8Hz",
+            rate="+0%"
         )
         mp3_data = bytearray()
         async for chunk in communicate.stream():
@@ -803,11 +803,12 @@ async def gerar_audio_fala_wav(texto: str) -> bytes:
             stderr=subprocess.DEVNULL
         )
         if p.stdout and len(p.stdout) > 100:
+            print(f"LOG TTS: Voz masculina (Edge-TTS Antonio -8Hz) gerada com sucesso! ({len(p.stdout)} bytes)")
             return p.stdout
     except Exception as e:
-        print(f"LOG TTS EDGE AVISO: {e}, tentando fallback Google...")
+        print(f"LOG TTS EDGE AVISO: Falha no Edge-TTS ({repr(e)}), tentando fallback Google...")
 
-    # 2. Fallback Google Translate TTS
+    # 3. Fallback Google Translate TTS
     try:
         q = urllib.parse.quote(texto[:250])
         url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl=pt-BR&client=tw-ob"
