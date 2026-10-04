@@ -710,10 +710,21 @@ async def processar_mensagem(mensagem: str) -> dict:
 
     emocao_escolhida, texto_limpo = extrair_segmentos_emocao(bruto)
 
-    # Publica a legenda completa limpa (sem tags) no display
+    # 1. Gera o áudio de fala com voz natural (TTS) para o alto-falante
+    global ultimo_audio_fala
+    try:
+        wav_gerado = await gerar_audio_fala_wav(texto_limpo)
+        if wav_gerado:
+            ultimo_audio_fala = wav_gerado
+            await publicar('quarto/falar_audio', 'http://163.176.173.232:8001/api/audio/fala.wav')
+            print(f'LOG TTS: Áudio gerado ({len(wav_gerado)} bytes) e enviado comando MQTT!')
+    except Exception as e:
+        print(f'LOG TTS ERRO: {e}')
+
+    # 2. Publica a legenda completa limpa (sem tags) no display
     await publicar('quarto/legenda', sem_acento(texto_limpo)[:300])
 
-    # Dispara a fala com a emoção estável e sólida
+    # 3. Dispara a fala com a emoção estável e sólida
     asyncio.create_task(animar_discurso_emocoes(emocao_escolhida, texto_limpo))
 
     return {
@@ -726,6 +737,73 @@ async def processar_mensagem(mensagem: str) -> dict:
 @app.post('/api/chat')
 async def chat(req: ChatRequest):
     return await processar_mensagem(req.mensagem)
+
+
+ultimo_audio_fala = bytes()
+
+async def gerar_audio_fala_wav(texto: str) -> bytes:
+    """Gera áudio WAV mono 16kHz 16-bit a partir de texto usando edge-tts ou fallback do Google."""
+    import subprocess
+    import urllib.request
+    import urllib.parse
+
+    # 1. Tenta Edge-TTS neural de alta qualidade em português (Antonio)
+    try:
+        import edge_tts
+        communicate = edge_tts.Communicate(texto, "pt-BR-AntonioNeural")
+        mp3_data = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                mp3_data.extend(chunk["data"])
+        
+        p = subprocess.run(
+            ["ffmpeg", "-y", "-i", "pipe:0", "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
+            input=bytes(mp3_data),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        if p.stdout and len(p.stdout) > 100:
+            return p.stdout
+    except Exception as e:
+        print(f"LOG TTS EDGE AVISO: {e}, tentando fallback Google...")
+
+    # 2. Fallback Google Translate TTS
+    try:
+        q = urllib.parse.quote(texto[:250])
+        url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl=pt-BR&client=tw-ob"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        mp3_data = urllib.request.urlopen(req, timeout=5).read()
+        p = subprocess.run(
+            ["ffmpeg", "-y", "-i", "pipe:0", "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
+            input=mp3_data,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        if p.stdout and len(p.stdout) > 100:
+            return p.stdout
+    except Exception as e:
+        print(f"LOG TTS GOOGLE ERRO: {e}")
+
+    return bytes()
+
+
+@app.get('/api/audio/fala.wav')
+def get_audio_fala():
+    """Retorna o áudio mais recente gerado para o alto-falante I2S do ESP32."""
+    global ultimo_audio_fala
+    if not ultimo_audio_fala:
+        raise HTTPException(status_code=404, detail="Nenhum áudio gerado ainda.")
+    return Response(content=ultimo_audio_fala, media_type="audio/wav")
+
+
+@app.get('/api/audio/teste.wav')
+async def get_audio_teste():
+    """Gera e retorna um áudio de teste para validar o alto-falante MAX98357A."""
+    frase_teste = "Olá Davi! O meu amplificador e alto-falante estão funcionando perfeitamente!"
+    wav = await gerar_audio_fala_wav(frase_teste)
+    if not wav:
+        raise HTTPException(status_code=500, detail="Erro ao gerar áudio de teste.")
+    return Response(content=wav, media_type="audio/wav")
 
 
 def montar_wav_raw(dados_pcm: bytes, sample_rate: int = 16000, bits: int = 16, canais: int = 1) -> bytes:
