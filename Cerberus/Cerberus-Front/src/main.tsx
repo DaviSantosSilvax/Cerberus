@@ -9,6 +9,7 @@ import Iluminacao from './Pages/Iluminação'
 import Climatizacao from './Pages/Climatização'
 import Cameras from './Pages/Cameras'
 import Cerberus from './Pages/Cerberus'
+import Musica from './Pages/Música'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -21,6 +22,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/climatizacao" element={<Climatizacao />} />
         <Route path="/cameras" element={<Cameras />} />
         <Route path="/cerberus" element={<Cerberus />} />
+        <Route path="/musica" element={<Musica />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>)

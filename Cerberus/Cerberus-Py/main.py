@@ -1,6 +1,8 @@
 import os
 import sys
 import asyncio
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import re
 import unicodedata
 import base64
@@ -24,6 +26,13 @@ RECONHECIMENTO_FACIAL_DIR = os.getenv(
 )
 if os.path.exists(RECONHECIMENTO_FACIAL_DIR) and RECONHECIMENTO_FACIAL_DIR not in sys.path:
     sys.path.append(RECONHECIMENTO_FACIAL_DIR)
+
+try:
+    import spotify_service
+    print("LOG SPOTIFY: Módulo carregado com sucesso!")
+except Exception as e:
+    print(f"LOG SPOTIFY AVISO: Não foi possível carregar ({e})")
+    spotify_service = None
 
 reconhecedor_facial = None
 try:
@@ -241,6 +250,57 @@ async def set_tela_cerberus(req: dict):
 @app.get('/api/dashboard/quarto')
 def get_status_quarto():
     return estado_quarto
+
+# --- ROTAS SPOTIFY ---
+@app.get('/api/spotify/status')
+def get_spotify_status():
+    if not spotify_service:
+        return {"conectado": False, "mensagem": "Módulo Spotify não disponível"}
+    return spotify_service.obter_tocando_agora()
+
+@app.post('/api/spotify/play')
+def spotify_play():
+    if not spotify_service: return {"sucesso": False}
+    return spotify_service.play()
+
+@app.post('/api/spotify/pause')
+def spotify_pause():
+    if not spotify_service: return {"sucesso": False}
+    return spotify_service.pause()
+
+@app.post('/api/spotify/proxima')
+def spotify_proxima():
+    if not spotify_service: return {"sucesso": False}
+    return spotify_service.proxima()
+
+@app.post('/api/spotify/anterior')
+def spotify_anterior():
+    if not spotify_service: return {"sucesso": False}
+    return spotify_service.anterior()
+
+@app.post('/api/spotify/volume')
+def spotify_volume(req: dict):
+    if not spotify_service: return {"sucesso": False}
+    v = req.get('volume', 50)
+    return spotify_service.ajustar_volume(v)
+
+@app.post('/api/spotify/tocar')
+async def spotify_tocar(req: dict):
+    if not spotify_service: return {"sucesso": False}
+    termo = req.get('termo', '')
+    res = spotify_service.buscar_e_tocar(termo)
+    if res.get('sucesso'):
+        musica = res.get('musica', termo)
+        artista = res.get('artista', '')
+        await publicar('quarto/legenda', f"♫ {musica} - {artista} ♫")
+        await publicar('quarto/emocao', 'animado')
+    return res
+
+@app.get('/api/spotify/dispositivos')
+def spotify_dispositivos():
+    if not spotify_service: return []
+    return spotify_service.listar_dispositivos()
+
 
 @app.get('/api/dashboard/camera-quarto')
 async def get_camera_quarto_snapshot():
@@ -622,6 +682,47 @@ FERRAMENTAS = [
                 'required': []
             }
         }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'tocar_musica_spotify',
+            'description': 'Busca e toca uma música, artista ou playlist no Spotify. Use sempre que o usuário pedir para tocar uma música, colocar um som, artista ou banda.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'termo': {
+                        'type': 'string',
+                        'description': 'Nome da música, artista ou álbum para pesquisar e tocar no Spotify.'
+                    }
+                },
+                'required': ['termo']
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'pausar_musica_spotify',
+            'description': 'Pausa a reprodução atual de música no Spotify. Use quando o usuário pedir para pausar, parar o som ou silenciar a música.',
+            'parameters': {'type': 'object', 'properties': {}}
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'retomar_musica_spotify',
+            'description': 'Retoma a reprodução da música pausada no Spotify.',
+            'parameters': {'type': 'object', 'properties': {}}
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'proxima_musica_spotify',
+            'description': 'Pula para a próxima música na fila do Spotify.',
+            'parameters': {'type': 'object', 'properties': {}}
+        }
     }
 ]
 
@@ -647,6 +748,29 @@ async def executar_ferramenta(nome: str, argumentos: dict) -> str:
         return await analisar_camera_quarto_com_visao(prompt)
     if nome == 'identificar_quem_esta_no_quarto':
         return await identificar_pessoas_no_frame()
+    if nome == 'tocar_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        termo = argumentos.get('termo', '')
+        res = spotify_service.buscar_e_tocar(termo)
+        if res.get('sucesso'):
+            musica = res.get('musica', termo)
+            artista = res.get('artista', '')
+            await publicar('quarto/legenda', f"♫ {musica} - {artista} ♫")
+            await publicar('quarto/emocao', 'animado')
+            return f"Tocando {musica} de {artista} no Spotify."
+        return f"Não foi possível tocar no Spotify: {res.get('erro', res.get('mensagem'))}"
+    if nome == 'pausar_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        res = spotify_service.pause()
+        return "Música pausada no Spotify." if res.get('sucesso') else f"Erro ao pausar: {res.get('erro')}"
+    if nome == 'retomar_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        res = spotify_service.play()
+        return "Música retomada no Spotify." if res.get('sucesso') else f"Erro ao retomar: {res.get('erro')}"
+    if nome == 'proxima_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        res = spotify_service.proxima()
+        return "Pulou para a próxima música." if res.get('sucesso') else f"Erro: {res.get('erro')}"
     return 'Ferramenta desconhecida.'
 
 async def processar_mensagem(mensagem: str) -> dict:
@@ -947,4 +1071,4 @@ async def voz(audio: UploadFile = File(...)):
 if __name__ == '__main__':
     import uvicorn
     port = int(os.getenv('PORT', 8000))
-    uvicorn.run(app, host='0.0.0.0', port=port)
+    uvicorn.run("main:app", host='0.0.0.0', port=port, loop="asyncio")

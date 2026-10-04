@@ -1,5 +1,4 @@
-import IconAll from "../../assets/CerberusLogoTwo.png"
-import { House, Video, Snowflake, Lightbulb, AlarmClockCheck, Diamond, ShieldCheck, Music, FileClock, Cctv } from "lucide-react"
+import { House, Snowflake, Lightbulb, AlarmClockCheck, Music, FileClock, Cctv } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 export default function SideBar() {
@@ -11,7 +10,7 @@ export default function SideBar() {
         { id: "Câmeras", label: "Câmeras", icon: Cctv, rota: "/cameras" },
         { id: "Dashboard", label: "Dashboard", icon: House, rota: "/dashboard" },
         { id: "Alarmes", label: "Alarmes", icon: AlarmClockCheck, rota: "/desenvolvimento" },
-        { id: "Músicas", label: "Músicas", icon: Music, rota: "/desenvolvimento" },
+        { id: "Músicas", label: "Músicas", icon: Music, rota: "/musica" },
         { id: "Log", label: "Log", icon: FileClock, rota: "/desenvolvimento" },
     ];
     return (

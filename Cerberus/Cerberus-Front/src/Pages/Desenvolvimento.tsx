@@ -1,4 +1,3 @@
-import { Skull } from "lucide-react";
 import { useNavigate } from "react-router-dom"
 import TelaDesenvolvimento from "../assets/TelaDesenvolvimento.png"
 export default function Desenvolvimento() {
