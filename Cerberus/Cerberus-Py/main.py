@@ -742,15 +742,55 @@ async def chat(req: ChatRequest):
 ultimo_audio_fala = bytes()
 
 async def gerar_audio_fala_wav(texto: str) -> bytes:
-    """Gera áudio WAV mono 16kHz 16-bit a partir de texto usando edge-tts ou fallback do Google."""
+    """Gera áudio WAV mono 16kHz 16-bit com voz masculina natural e imersiva para o Styx."""
     import subprocess
     import urllib.request
     import urllib.parse
+    import httpx
 
-    # 1. Tenta Edge-TTS neural de alta qualidade em português (Antonio)
+    # 1. Se houver chave do ElevenLabs configurada, usa voz ultra-realista
+    elevenlabs_key = os.getenv('ELEVENLABS_API_KEY')
+    elevenlabs_voice_id = os.getenv('ELEVENLABS_VOICE_ID', 'pNInz6obpgDQGcFmaJgB') # Adam (Voz masculina profunda e natural)
+    if elevenlabs_key:
+        try:
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}"
+            headers = {
+                "xi-api-key": elevenlabs_key,
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "text": texto,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.8,
+                    "style": 0.2
+                }
+            }
+            async with httpx.AsyncClient(timeout=12) as client:
+                res = await client.post(url, json=payload, headers=headers)
+                if res.status_code == 200 and len(res.content) > 100:
+                    p = subprocess.run(
+                        ["ffmpeg", "-y", "-i", "pipe:0", "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
+                        input=res.content,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL
+                    )
+                    if p.stdout and len(p.stdout) > 100:
+                        return p.stdout
+        except Exception as e:
+            print(f"LOG TTS ELEVENLABS AVISO: {e}, usando Edge-TTS neural...")
+
+    # 2. Voz Neural Masculina Profunda (Edge-TTS com tom grave e ritmo natural)
     try:
         import edge_tts
-        communicate = edge_tts.Communicate(texto, "pt-BR-AntonioNeural")
+        # pitch='-6Hz' deixa a voz encorpada, masculina e firme; rate='+3%' dá ritmo dinâmico e natural
+        communicate = edge_tts.Communicate(
+            texto,
+            "pt-BR-AntonioNeural",
+            pitch="-6Hz",
+            rate="+3%"
+        )
         mp3_data = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
