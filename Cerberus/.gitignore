@@ -31,3 +31,7 @@ logs/
 Esp32/
 esp32/
 *.ino
+
+# Caches
+.spotify_cache
+*.cache
