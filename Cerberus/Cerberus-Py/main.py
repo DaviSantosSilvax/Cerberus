@@ -1,8 +1,7 @@
 import os
 import sys
 import asyncio
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# No Python 3.12+ no Windows, o loop padrao ProactorEventLoop eh obrigatorio para aiomqtt
 import re
 import unicodedata
 import base64
@@ -122,16 +121,101 @@ async def processar_comando_mqtt(topico: str, valor: str):
         resultado = await executar_ferramenta('controlar_ar_condicionado', {'ligar': ligar})
         print('LOG MQTT AR:', resultado)
         await publicar('quarto/ar', 'on' if ligar else 'off', retain=True)
+    elif topico == 'quarto/spotify/comando':
+        print(f"LOG MQTT SPOTIFY COMANDO: '{valor}'")
+        if spotify_service:
+            if valor in ('avancar', '+10', 'forward'):
+                spotify_service.pular_tempo(10)
+            elif valor in ('retroceder', '-10', 'rewind', 'back'):
+                spotify_service.pular_tempo(-10)
+            elif valor in ('alternar', 'toggle', 'play', 'pause'):
+                dados = spotify_service.obter_tocando_agora()
+                if dados.get("tocando"):
+                    spotify_service.pause()
+                else:
+                    spotify_service.play()
+            elif valor in ('proxima', 'next'):
+                spotify_service.proxima()
+            elif valor in ('anterior', 'prev', 'previous'):
+                spotify_service.anterior()
+            elif valor.startswith('seek:'):
+                try:
+                    num = int(valor.split(':', 1)[1])
+                    pos_ms = num * 1000 if num < 36000 else num
+                    spotify_service.seek(pos_ms)
+                except Exception as e:
+                    print(f"Erro ao processar seek MQTT: {e}")
+            await asyncio.sleep(0.3)
+            await publicar_status_spotify()
+        return
+
+def limpar_ascii(txt: str) -> str:
+    if not txt: return ""
+    return unicodedata.normalize('NFKD', str(txt)).encode('ascii', 'ignore').decode('ascii')
+
+async def publicar_status_spotify():
+    """Envia o estado atual do Spotify (reprodução, posição, duração, nomes) via MQTT."""
+    if not spotify_service: return
+    try:
+        dados = spotify_service.obter_tocando_agora()
+        if not dados or not dados.get("conectado"):
+            return
+        tocando = 1 if dados.get("tocando") else 0
+        pos_s = int((dados.get("progresso_ms") or 0) / 1000)
+        dur_s = int((dados.get("duracao_ms") or 0) / 1000)
+        musica = limpar_ascii(dados.get("musica") or "")
+        artista = limpar_ascii(dados.get("artista") or "")
+        payload = f"{tocando}|{pos_s}|{dur_s}|{musica}|{artista}"
+        await publicar("quarto/spotify/status", payload)
+    except Exception as e:
+        print(f"[Spotify MQTT Status Erro] {e}")
+
+async def loop_sincronizacao_spotify():
+    """Monitora a música atual no Spotify e sincroniza o display do ESP32 automaticamente."""
+    ultima_musica = None
+    while True:
+        try:
+            if spotify_service:
+                dados = spotify_service.obter_tocando_agora()
+                if dados.get("tocando") and dados.get("musica"):
+                    musica_atual = f"{dados['musica']} - {dados.get('artista', '')}"
+                    if musica_atual != ultima_musica:
+                        ultima_musica = musica_atual
+                        print(f"[Spotify -> ESP32] Nova música detectada: {musica_atual}")
+                        texto_legenda = f"Tocando: {limpar_ascii(dados['musica'])} - {limpar_ascii(dados.get('artista', ''))}"
+                        await publicar("quarto/legenda", texto_legenda)
+                        await publicar("quarto/emocao", "animado")
+                    
+                    # Publica progresso e status para a barra de progresso no ESP32
+                    pos_s = int((dados.get("progresso_ms") or 0) / 1000)
+                    dur_s = int((dados.get("duracao_ms") or 0) / 1000)
+                    musica = limpar_ascii(dados.get("musica") or "")
+                    artista = limpar_ascii(dados.get("artista") or "")
+                    payload = f"1|{pos_s}|{dur_s}|{musica}|{artista}"
+                    await publicar("quarto/spotify/status", payload)
+                elif not dados.get("tocando") and ultima_musica:
+                    ultima_musica = None
+                    pos_s = int((dados.get("progresso_ms") or 0) / 1000)
+                    dur_s = int((dados.get("duracao_ms") or 0) / 1000)
+                    musica = limpar_ascii(dados.get("musica") or "")
+                    artista = limpar_ascii(dados.get("artista") or "")
+                    payload = f"0|{pos_s}|{dur_s}|{musica}|{artista}"
+                    await publicar("quarto/spotify/status", payload)
+        except Exception as e:
+            print(f"[Spotify Loop Erro] {e}")
+        await asyncio.sleep(2.5)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tarefa_mqtt = asyncio.create_task(escutar_mqtt(processar_comando_mqtt))
     tarefa_sync = asyncio.create_task(loop_sincronizacao_periodica())
+    tarefa_spotify = asyncio.create_task(loop_sincronizacao_spotify())
     # Sincroniza o status real na inicialização
     asyncio.create_task(sincronizar_dispositivos_mqtt())
     yield
     tarefa_mqtt.cancel()
     tarefa_sync.cancel()
+    tarefa_spotify.cancel()
 
 app = FastAPI(title='Cerberus Home API', version='1.0.0', lifespan=lifespan)
 
@@ -259,47 +343,81 @@ def get_spotify_status():
     return spotify_service.obter_tocando_agora()
 
 @app.post('/api/spotify/play')
-def spotify_play():
+def spotify_play(req: dict = None):
     if not spotify_service: return {"sucesso": False}
-    return spotify_service.play()
+    dev = req.get('device_id') if req else None
+    return spotify_service.play(device_id=dev)
 
 @app.post('/api/spotify/pause')
-def spotify_pause():
+def spotify_pause(req: dict = None):
     if not spotify_service: return {"sucesso": False}
-    return spotify_service.pause()
+    dev = req.get('device_id') if req else None
+    return spotify_service.pause(device_id=dev)
 
 @app.post('/api/spotify/proxima')
-def spotify_proxima():
+def spotify_proxima(req: dict = None):
     if not spotify_service: return {"sucesso": False}
-    return spotify_service.proxima()
+    dev = req.get('device_id') if req else None
+    return spotify_service.proxima(device_id=dev)
 
 @app.post('/api/spotify/anterior')
-def spotify_anterior():
+def spotify_anterior(req: dict = None):
     if not spotify_service: return {"sucesso": False}
-    return spotify_service.anterior()
+    dev = req.get('device_id') if req else None
+    return spotify_service.anterior(device_id=dev)
 
 @app.post('/api/spotify/volume')
 def spotify_volume(req: dict):
     if not spotify_service: return {"sucesso": False}
     v = req.get('volume', 50)
-    return spotify_service.ajustar_volume(v)
+    dev = req.get('device_id')
+    return spotify_service.ajustar_volume(v, device_id=dev)
 
 @app.post('/api/spotify/tocar')
 async def spotify_tocar(req: dict):
     if not spotify_service: return {"sucesso": False}
     termo = req.get('termo', '')
-    res = spotify_service.buscar_e_tocar(termo)
+    dev = req.get('device_id')
+    res = spotify_service.buscar_e_tocar(termo, device_id=dev)
     if res.get('sucesso'):
-        musica = res.get('musica', termo)
-        artista = res.get('artista', '')
-        await publicar('quarto/legenda', f"♫ {musica} - {artista} ♫")
-        await publicar('quarto/emocao', 'animado')
+        musica = limpar_ascii(res.get('musica', termo))
+        artista = limpar_ascii(res.get('artista', ''))
+        asyncio.create_task(publicar('quarto/legenda', f"Tocando: {musica} - {artista}"))
+        asyncio.create_task(publicar('quarto/emocao', 'animado'))
+        asyncio.create_task(publicar('quarto/tela', 'cerberus'))
     return res
+
+@app.post('/api/spotify/transferir')
+def spotify_transferir(req: dict):
+    if not spotify_service: return {"sucesso": False}
+    dev = req.get('device_id')
+    return spotify_service.transferir_reproducao(dev)
 
 @app.get('/api/spotify/dispositivos')
 def spotify_dispositivos():
     if not spotify_service: return []
     return spotify_service.listar_dispositivos()
+
+@app.post('/api/spotify/seek')
+def spotify_seek(req: dict):
+    if not spotify_service: return {"sucesso": False}
+    pos_ms = req.get('posicao_ms', 0)
+    dev = req.get('device_id')
+    return spotify_service.seek(pos_ms, device_id=dev)
+
+@app.post('/api/spotify/avancar')
+def spotify_avancar(req: dict = None):
+    if not spotify_service: return {"sucesso": False}
+    seg = req.get('segundos', 10) if req else 10
+    dev = req.get('device_id') if req else None
+    return spotify_service.pular_tempo(seg, device_id=dev)
+
+@app.post('/api/spotify/retroceder')
+def spotify_retroceder(req: dict = None):
+    if not spotify_service: return {"sucesso": False}
+    seg = req.get('segundos', 10) if req else 10
+    dev = req.get('device_id') if req else None
+    return spotify_service.pular_tempo(-seg, device_id=dev)
 
 
 @app.get('/api/dashboard/camera-quarto')
@@ -518,6 +636,10 @@ SYSTEM_PROMPT = (
     'REGRA DO CARINHO E AFETO: '
     'Quando o Davi ou a Dudica fizerem carinho em voce ou te elogiarem, DESLIGUE o sarcasmo e fique genuinamente feliz, '
     'amoroso e agradecido como um assistente/companheiro fofo que adora atencao (use [amoroso] ou [feliz]). '
+    'CONTROLE TOTAL DE MUSICA (SPOTIFY): '
+    'Voce tem poder total sobre o som e o Spotify atraves das suas ferramentas: tocar qualquer musica/artista, pular faixa (proxima), voltar faixa (anterior), pausar, retomar, avancar/retroceder segundos, alterar volume ou ver o que esta tocando. '
+    'Quando pedirem para voce escolher ou colocar o que quiser ("escolhe uma musica", "toca o que voce quiser", "coloca algo bom", "o que voce recomenda?"): '
+    'Sinta-se 100% livre para decidir! Escolha uma musica marcante com a sua personalidade de IA robo inteligente (eletronica, synthwave, Daft Punk, Queen, Legiao Urbana, etc.), justifique com uma tirada divertida ou amigavel e use tocar_musica_spotify com o nome e artista! '
     'Responda SEMPRE em portugues, em no maximo 2 frases curtas, engracadas e bem pontuadas. '
     'REGRA CRITICA DE EMOCOES NO DISPLAY: '
     'Voce DEVE usar EXATAMENTE UMA UNICA tag de emocao [nome_da_emocao] NO INICIO da sua resposta! '
@@ -687,7 +809,7 @@ FERRAMENTAS = [
         'type': 'function',
         'function': {
             'name': 'tocar_musica_spotify',
-            'description': 'Busca e toca uma música, artista ou playlist no Spotify. Use sempre que o usuário pedir para tocar uma música, colocar um som, artista ou banda.',
+            'description': 'Busca e toca uma música, artista, álbum ou playlist no Spotify. Use sempre que o usuário pedir para tocar uma música, colocar um som, artista ou banda, OU quando pedirem para você (Styx) escolher uma música que você gosta.',
             'parameters': {
                 'type': 'object',
                 'properties': {
@@ -712,7 +834,7 @@ FERRAMENTAS = [
         'type': 'function',
         'function': {
             'name': 'retomar_musica_spotify',
-            'description': 'Retoma a reprodução da música pausada no Spotify.',
+            'description': 'Retoma ou despausa a reprodução da música pausada no Spotify.',
             'parameters': {'type': 'object', 'properties': {}}
         }
     },
@@ -720,8 +842,93 @@ FERRAMENTAS = [
         'type': 'function',
         'function': {
             'name': 'proxima_musica_spotify',
-            'description': 'Pula para a próxima música na fila do Spotify.',
+            'description': 'Pula para a próxima música na fila do Spotify. Use quando o usuário pedir para passar de música, pular ou ir para a próxima.',
             'parameters': {'type': 'object', 'properties': {}}
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'musica_anterior_spotify',
+            'description': 'Retorna para a música anterior na fila do Spotify. Use quando o usuário pedir para voltar a música ou tocar a anterior.',
+            'parameters': {'type': 'object', 'properties': {}}
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'avancar_musica_spotify',
+            'description': 'Avança alguns segundos (ex: 10 segundos, 30 segundos) na música que está tocando no Spotify.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'segundos': {
+                        'type': 'integer',
+                        'description': 'Quantidade de segundos para avançar. Padrão: 10.'
+                    }
+                },
+                'required': []
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'retroceder_musica_spotify',
+            'description': 'Volta ou retrocede alguns segundos (ex: 10 segundos) na música que está tocando no Spotify.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'segundos': {
+                        'type': 'integer',
+                        'description': 'Quantidade de segundos para retroceder. Padrão: 10.'
+                    }
+                },
+                'required': []
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'ajustar_volume_spotify',
+            'description': 'Ajusta o volume do Spotify de 0 a 100%. Use quando o usuário pedir para aumentar, abaixar ou definir o volume.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'volume': {
+                        'type': 'integer',
+                        'description': 'Volume desejado de 0 a 100.'
+                    }
+                },
+                'required': ['volume']
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'obter_status_musica_spotify',
+            'description': 'Obtém a música e o artista que estão tocando atualmente no Spotify para responder a dúvidas do usuário.',
+            'parameters': {'type': 'object', 'properties': {}}
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'mudar_tela_display',
+            'description': 'Muda a tela do display LCD do ESP32. Opções: "spotify" (player de música), "home" (relógio e automações), "cerberus" (rosto animado do Styx).',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'tela': {
+                        'type': 'string',
+                        'enum': ['spotify', 'home', 'cerberus'],
+                        'description': 'Nome da tela para exibir: "spotify", "home" ou "cerberus".'
+                    }
+                },
+                'required': ['tela']
+            }
         }
     }
 ]
@@ -753,24 +960,69 @@ async def executar_ferramenta(nome: str, argumentos: dict) -> str:
         termo = argumentos.get('termo', '')
         res = spotify_service.buscar_e_tocar(termo)
         if res.get('sucesso'):
-            musica = res.get('musica', termo)
-            artista = res.get('artista', '')
-            await publicar('quarto/legenda', f"♫ {musica} - {artista} ♫")
+            musica = limpar_ascii(res.get('musica', termo))
+            artista = limpar_ascii(res.get('artista', ''))
+            await publicar('quarto/legenda', f"Tocando: {musica} - {artista}")
             await publicar('quarto/emocao', 'animado')
+            await publicar('quarto/tela', 'cerberus')
+            await asyncio.sleep(0.4)
+            await publicar_status_spotify()
             return f"Tocando {musica} de {artista} no Spotify."
         return f"Não foi possível tocar no Spotify: {res.get('erro', res.get('mensagem'))}"
     if nome == 'pausar_musica_spotify':
         if not spotify_service: return 'Spotify não configurado no servidor.'
         res = spotify_service.pause()
+        await asyncio.sleep(0.3)
+        await publicar_status_spotify()
         return "Música pausada no Spotify." if res.get('sucesso') else f"Erro ao pausar: {res.get('erro')}"
     if nome == 'retomar_musica_spotify':
         if not spotify_service: return 'Spotify não configurado no servidor.'
         res = spotify_service.play()
+        await asyncio.sleep(0.3)
+        await publicar_status_spotify()
         return "Música retomada no Spotify." if res.get('sucesso') else f"Erro ao retomar: {res.get('erro')}"
     if nome == 'proxima_musica_spotify':
         if not spotify_service: return 'Spotify não configurado no servidor.'
         res = spotify_service.proxima()
+        await asyncio.sleep(0.4)
+        await publicar_status_spotify()
         return "Pulou para a próxima música." if res.get('sucesso') else f"Erro: {res.get('erro')}"
+    if nome == 'musica_anterior_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        res = spotify_service.anterior()
+        await asyncio.sleep(0.4)
+        await publicar_status_spotify()
+        return "Voltou para a música anterior." if res.get('sucesso') else f"Erro ao voltar música: {res.get('erro')}"
+    if nome == 'avancar_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        seg = argumentos.get('segundos', 10)
+        res = spotify_service.pular_tempo(seg)
+        await asyncio.sleep(0.3)
+        await publicar_status_spotify()
+        return f"Avançou {seg} segundos na música." if res.get('sucesso') else f"Erro ao avançar: {res.get('erro', res.get('mensagem'))}"
+    if nome == 'retroceder_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        seg = argumentos.get('segundos', 10)
+        res = spotify_service.pular_tempo(-seg)
+        await asyncio.sleep(0.3)
+        await publicar_status_spotify()
+        return f"Voltou {seg} segundos na música." if res.get('sucesso') else f"Erro ao retroceder: {res.get('erro', res.get('mensagem'))}"
+    if nome == 'ajustar_volume_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        vol = argumentos.get('volume', 70)
+        res = spotify_service.ajustar_volume(vol)
+        return f"Volume do Spotify ajustado para {vol}%." if res.get('sucesso') else f"Erro ao ajustar volume: {res.get('erro')}"
+    if nome == 'obter_status_musica_spotify':
+        if not spotify_service: return 'Spotify não configurado no servidor.'
+        dados = spotify_service.obter_tocando_agora()
+        if not dados or not dados.get('conectado') or not dados.get('musica'):
+            return "Nenhuma música está tocando no momento no Spotify."
+        st = "reproduzindo" if dados.get('tocando') else "pausada"
+        return f"Está {st} a música '{dados.get('musica')}' do artista '{dados.get('artista')}'."
+    if nome == 'mudar_tela_display':
+        tela = argumentos.get('tela', 'cerberus').strip().lower()
+        await publicar('quarto/tela', tela)
+        return f"Tela do display alterada para '{tela}' com sucesso."
     return 'Ferramenta desconhecida.'
 
 async def processar_mensagem(mensagem: str) -> dict:
@@ -1070,5 +1322,5 @@ async def voz(audio: UploadFile = File(...)):
 
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.getenv('PORT', 8000))
-    uvicorn.run("main:app", host='0.0.0.0', port=port, loop="asyncio")
+    port = int(os.getenv('PORT', 8001))
+    uvicorn.run("main:app", host='0.0.0.0', port=port)

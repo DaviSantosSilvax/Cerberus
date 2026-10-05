@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import CerberusBackground from "../assets/CerberusBackground.png";
 import SideBar from "../Components/DashBoard/SideBar";
 import SideBarMobile from "../Components/DashBoard/SideBarMobile";
@@ -8,6 +8,8 @@ import {
     Pause, 
     SkipBack, 
     SkipForward, 
+    RotateCcw,
+    RotateCw,
     Volume2, 
     VolumeX, 
     Search, 
@@ -32,6 +34,7 @@ export default function Musica() {
     });
 
     const [dispositivos, setDispositivos] = useState<any[]>([]);
+    const [dispositivoSelecionado, setDispositivoSelecionado] = useState<string>("");
     const [busca, setBusca] = useState<string>("");
     const [buscando, setBuscando] = useState<boolean>(false);
     const [volumeLocal, setVolumeLocal] = useState<number>(70);
@@ -60,6 +63,13 @@ export default function Musica() {
                 const data = await res.json();
                 if (Array.isArray(data)) {
                     setDispositivos(data);
+                    const ativo = data.find((d: any) => d.is_active);
+                    const aindaExiste = data.some((d: any) => d.id === dispositivoSelecionado);
+                    if (ativo && (!dispositivoSelecionado || !aindaExiste)) {
+                        setDispositivoSelecionado(ativo.id);
+                    } else if (!aindaExiste && data.length > 0) {
+                        setDispositivoSelecionado(data[0].id);
+                    }
                 }
             } catch (err) {
                 console.error("Erro ao buscar dispositivos:", err);
@@ -75,14 +85,45 @@ export default function Musica() {
             clearInterval(intStatus);
             clearInterval(intDevs);
         };
-    }, [API_CLOUD]);
+    }, [API_CLOUD, dispositivoSelecionado]);
+
+    // Incremento suave em tempo real a cada 1s quando tocando
+    useEffect(() => {
+        if (!status.tocando) return;
+        const tick = setInterval(() => {
+            setStatus((prev: any) => {
+                if (!prev.tocando || prev.duracao_ms <= 0) return prev;
+                const novo = prev.progresso_ms + 1000;
+                return { ...prev, progresso_ms: Math.min(prev.duracao_ms, novo) };
+            });
+        }, 1000);
+        return () => clearInterval(tick);
+    }, [status.tocando]);
+
+    // Trocar de dispositivo
+    const trocarDispositivo = async (devId: string) => {
+        setDispositivoSelecionado(devId);
+        try {
+            await fetch(`${API_CLOUD}/spotify/transferir`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ device_id: devId }),
+            });
+        } catch (err) {
+            console.error("Erro ao transferir dispositivo:", err);
+        }
+    };
 
     // Ações de Reprodução
     const alternarPlayPause = async () => {
         const acao = status.tocando ? "pause" : "play";
         setStatus((prev: any) => ({ ...prev, tocando: !prev.tocando }));
         try {
-            await fetch(`${API_CLOUD}/spotify/${acao}`, { method: "POST" });
+            await fetch(`${API_CLOUD}/spotify/${acao}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ device_id: dispositivoSelecionado }),
+            });
         } catch (err) {
             console.error(err);
         }
@@ -90,7 +131,11 @@ export default function Musica() {
 
     const pularFaixa = async () => {
         try {
-            await fetch(`${API_CLOUD}/spotify/proxima`, { method: "POST" });
+            await fetch(`${API_CLOUD}/spotify/proxima`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ device_id: dispositivoSelecionado }),
+            });
         } catch (err) {
             console.error(err);
         }
@@ -98,23 +143,85 @@ export default function Musica() {
 
     const voltarFaixa = async () => {
         try {
-            await fetch(`${API_CLOUD}/spotify/anterior`, { method: "POST" });
+            await fetch(`${API_CLOUD}/spotify/anterior`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ device_id: dispositivoSelecionado }),
+            });
         } catch (err) {
             console.error(err);
         }
     };
 
-    const mudarVolume = async (novoVol: number) => {
-        setVolumeLocal(novoVol);
+    // Pular para posição específica na música (Seek)
+    const clicarBarraProgresso = async (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!status.duracao_ms || status.duracao_ms <= 0) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+        const novaPosicaoMs = Math.round(ratio * status.duracao_ms);
+
+        setStatus((prev: any) => ({ ...prev, progresso_ms: novaPosicaoMs }));
+
         try {
-            await fetch(`${API_CLOUD}/spotify/volume`, {
+            await fetch(`${API_CLOUD}/spotify/seek`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ volume: novoVol }),
+                body: JSON.stringify({ 
+                    posicao_ms: novaPosicaoMs, 
+                    device_id: dispositivoSelecionado || undefined 
+                }),
             });
         } catch (err) {
-            console.error(err);
+            console.error("Erro ao mudar posição da música:", err);
         }
+    };
+
+    // Avançar 10 segundos
+    const avancar10s = async () => {
+        const novaPos = Math.min(status.duracao_ms || Infinity, (status.progresso_ms || 0) + 10000);
+        setStatus((prev: any) => ({ ...prev, progresso_ms: novaPos }));
+        try {
+            await fetch(`${API_CLOUD}/spotify/avancar`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ segundos: 10, device_id: dispositivoSelecionado || undefined }),
+            });
+        } catch (err) {
+            console.error("Erro ao avançar 10s:", err);
+        }
+    };
+
+    // Retroceder 10 segundos
+    const retroceder10s = async () => {
+        const novaPos = Math.max(0, (status.progresso_ms || 0) - 10000);
+        setStatus((prev: any) => ({ ...prev, progresso_ms: novaPos }));
+        try {
+            await fetch(`${API_CLOUD}/spotify/retroceder`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ segundos: 10, device_id: dispositivoSelecionado || undefined }),
+            });
+        } catch (err) {
+            console.error("Erro ao retroceder 10s:", err);
+        }
+    };
+
+    const timerVolume = useRef<any>(null);
+    const mudarVolume = (novoVol: number) => {
+        setVolumeLocal(novoVol);
+        if (timerVolume.current) clearTimeout(timerVolume.current);
+        timerVolume.current = setTimeout(async () => {
+            try {
+                await fetch(`${API_CLOUD}/spotify/volume`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ volume: novoVol, device_id: dispositivoSelecionado || undefined }),
+                });
+            } catch (err) {
+                console.error("Erro ao ajustar volume:", err);
+            }
+        }, 250);
     };
 
     const buscarETocar = async (termo: string) => {
@@ -125,11 +232,18 @@ export default function Musica() {
             const res = await fetch(`${API_CLOUD}/spotify/tocar`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ termo }),
+                body: JSON.stringify({ termo, device_id: dispositivoSelecionado || undefined }),
             });
             const data = await res.json();
             if (data.sucesso) {
                 setMensagemStatus(`♫ Tocando: ${data.musica} - ${data.artista}`);
+                setStatus((prev: any) => ({
+                    ...prev,
+                    musica: data.musica,
+                    artista: data.artista,
+                    capa_url: data.capa_url || prev.capa_url,
+                    tocando: true
+                }));
                 setBusca("");
             } else {
                 setMensagemStatus(`Aviso: ${data.erro || data.mensagem || "Não foi possível tocar."}`);
@@ -187,7 +301,7 @@ export default function Musica() {
                                         : "bg-amber-500/20 border-amber-400 text-amber-300"
                                 }`}>
                                     <span className="w-2 h-2 rounded-full bg-[#1ed760] animate-pulse" />
-                                    <span>{status.conectado ? "SPOTIFY CONNECT ON" : "CONECTANDO"}</span>
+                                    <span>{status.conectado ? "SPOTIFY CONNECT (PREMIUM)" : "CONECTANDO"}</span>
                                 </div>
                             </div>
 
@@ -196,13 +310,25 @@ export default function Musica() {
                             </p>
                         </div>
 
-                        {/* Dispositivo Ativo */}
+                        {/* Seletor de Dispositivo Ativo */}
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#091544]/80 border border-[#0066ff55] text-xs font-rajdhani">
                             <Laptop className="w-4 h-4 text-[#1ed760]" />
-                            <span className="text-[#a4e2ff]">Dispositivo:</span>
-                            <span className="text-white font-bold">
-                                {status.dispositivo || (dispositivos.length > 0 ? dispositivos[0].name : "Nenhum ativo")}
-                            </span>
+                            <span className="text-[#a4e2ff]">Tocar em:</span>
+                            <select
+                                value={dispositivoSelecionado}
+                                onChange={(e) => trocarDispositivo(e.target.value)}
+                                className="bg-[#0c184d] text-white font-bold font-rajdhani rounded-lg px-2 py-1 border border-[#0077ff]/60 focus:outline-none focus:border-[#1ed760] cursor-pointer text-xs"
+                            >
+                                {dispositivos.length === 0 ? (
+                                    <option value="">Nenhum dispositivo aberto</option>
+                                ) : (
+                                    dispositivos.map((d: any) => (
+                                        <option key={d.id} value={d.id}>
+                                            {d.name} {d.is_active ? "● (Ativo)" : ""}
+                                        </option>
+                                    ))
+                                )}
+                            </select>
                         </div>
                     </div>
 
@@ -255,51 +381,92 @@ export default function Musica() {
                             </div>
 
                             {/* BARRA DE PROGRESSO */}
-                            <div className="flex flex-col gap-1 pt-2">
-                                <div className="w-full h-2 bg-[#091544] rounded-full overflow-hidden border border-[#0051d344]">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-[#00b7ff] to-[#1ed760] rounded-full shadow-[0_0_10px_#1ed760] transition-all duration-300"
-                                        style={{ width: `${progressoPorcento}%` }}
+                            {/* BARRA DE PROGRESSO INTERATIVA (CLICÁVEL / SCRUBBER) */}
+                            <div className="flex flex-col gap-1.5 pt-2">
+                                <div 
+                                    onClick={clicarBarraProgresso}
+                                    className="group relative w-full h-3 bg-[#091544] rounded-full overflow-visible border border-[#0051d344] cursor-pointer flex items-center hover:border-[#1ed760]/80 transition-colors"
+                                    title="Clique para pular para esta parte da música"
+                                >
+                                    {/* Trilho de Progresso */}
+                                    <div className="w-full h-2 rounded-full overflow-hidden relative pointer-events-none">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-[#00b7ff] to-[#1ed760] rounded-full shadow-[0_0_12px_#1ed760] transition-all duration-150"
+                                            style={{ width: `${progressoPorcento}%` }}
+                                        />
+                                    </div>
+                                    
+                                    {/* Indicador Scrubber (Dot) */}
+                                    <div 
+                                        className="absolute w-3.5 h-3.5 bg-white rounded-full border-2 border-[#1ed760] shadow-[0_0_8px_#1ed760] -translate-x-1/2 pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all"
+                                        style={{ left: `${progressoPorcento}%` }}
                                     />
                                 </div>
-                                <div className="flex justify-between text-[11px] font-rajdhani text-slate-400">
+                                <div className="flex justify-between items-center text-[11px] font-rajdhani text-slate-400 select-none">
                                     <span>{formatarTempo(status.progresso_ms)}</span>
+                                    <span className="text-[10px] text-cyan-400/60 uppercase tracking-widest hidden sm:inline">
+                                        Clique na barra para mudar de parte
+                                    </span>
                                     <span>{formatarTempo(status.duracao_ms)}</span>
                                 </div>
                             </div>
 
                             {/* BOTÕES DE CONTROLE MULTIMÍDIA */}
                             <div className="flex items-center justify-between pt-2">
-                                <div className="flex items-center gap-3 sm:gap-4">
-                                    {/* VOLTAR */}
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                    {/* VOLTAR FAIXA */}
                                     <button
                                         onClick={voltarFaixa}
-                                        className="p-3 rounded-full bg-[#002fff22] border border-[#0077ff]/60 text-cyan-300 hover:scale-110 hover:bg-[#002fff44] transition-all cursor-pointer"
+                                        className="p-2.5 sm:p-3 rounded-full bg-[#002fff18] border border-[#0077ff]/40 text-cyan-300 hover:scale-110 hover:bg-[#002fff33] transition-all cursor-pointer"
                                         title="Faixa Anterior"
                                     >
-                                        <SkipBack className="w-5 h-5" />
+                                        <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
+                                    </button>
+
+                                    {/* RETROCEDER 10s */}
+                                    <button
+                                        onClick={retroceder10s}
+                                        className="relative p-2.5 sm:p-3 rounded-full bg-[#002fff18] border border-[#0077ff]/40 text-cyan-300 hover:border-[#00b7ff] hover:scale-110 hover:bg-[#002fff33] transition-all cursor-pointer flex items-center justify-center group"
+                                        title="Voltar 10 segundos"
+                                    >
+                                        <RotateCcw className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-cyan-300" />
+                                        <span className="absolute -bottom-1 text-[9px] font-bold font-rajdhani text-cyan-200 bg-[#061033] px-1 rounded border border-[#0077ff]/60 leading-none">
+                                            10
+                                        </span>
                                     </button>
 
                                     {/* PLAY / PAUSE */}
                                     <button
                                         onClick={alternarPlayPause}
-                                        className="p-4 sm:p-5 rounded-full bg-gradient-to-br from-[#1ed760] to-[#00b7ff] text-black hover:scale-108 transition-all cursor-pointer shadow-[0_0_25px_rgba(30,215,96,0.5)]"
+                                        className="p-3.5 sm:p-4.5 rounded-full bg-gradient-to-br from-[#1ed760] to-[#00b7ff] text-black hover:scale-108 transition-all cursor-pointer shadow-[0_0_25px_rgba(30,215,96,0.5)] mx-1"
                                         title={status.tocando ? "Pausar" : "Tocar"}
                                     >
                                         {status.tocando ? (
-                                            <Pause className="w-7 h-7 fill-black" />
+                                            <Pause className="w-6 h-6 sm:w-7 sm:h-7 fill-black" />
                                         ) : (
-                                            <Play className="w-7 h-7 fill-black ml-0.5" />
+                                            <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-black ml-0.5" />
                                         )}
                                     </button>
 
-                                    {/* PRÓXIMA */}
+                                    {/* AVANÇAR 10s */}
+                                    <button
+                                        onClick={avancar10s}
+                                        className="relative p-2.5 sm:p-3 rounded-full bg-[#002fff18] border border-[#0077ff]/40 text-cyan-300 hover:border-[#00b7ff] hover:scale-110 hover:bg-[#002fff33] transition-all cursor-pointer flex items-center justify-center group"
+                                        title="Avançar 10 segundos"
+                                    >
+                                        <RotateCw className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-cyan-300" />
+                                        <span className="absolute -bottom-1 text-[9px] font-bold font-rajdhani text-cyan-200 bg-[#061033] px-1 rounded border border-[#0077ff]/60 leading-none">
+                                            10
+                                        </span>
+                                    </button>
+
+                                    {/* PRÓXIMA FAIXA */}
                                     <button
                                         onClick={pularFaixa}
-                                        className="p-3 rounded-full bg-[#002fff22] border border-[#0077ff]/60 text-cyan-300 hover:scale-110 hover:bg-[#002fff44] transition-all cursor-pointer"
+                                        className="p-2.5 sm:p-3 rounded-full bg-[#002fff18] border border-[#0077ff]/40 text-cyan-300 hover:scale-110 hover:bg-[#002fff33] transition-all cursor-pointer"
                                         title="Próxima Faixa"
                                     >
-                                        <SkipForward className="w-5 h-5" />
+                                        <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
                                     </button>
                                 </div>
 
@@ -368,10 +535,10 @@ export default function Musica() {
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             {[
-                                { nome: "Lo-Fi Beats", termo: "Lofi hip hop beats to study" },
-                                { nome: "Synthwave Cyberpunk", termo: "Synthwave cyberpunk chill" },
-                                { nome: "Rock Clássico", termo: "Classic Rock Hits" },
-                                { nome: "Deep Work / Foco", termo: "Deep Focus Ambient" },
+                                { nome: "Lo-Fi Beats", termo: "Lofi Beats" },
+                                { nome: "Synthwave Cyberpunk", termo: "Synthwave" },
+                                { nome: "Rock Clássico", termo: "Rock Classico" },
+                                { nome: "Deep Work / Foco", termo: "Deep Focus" },
                             ].map((p, idx) => (
                                 <button
                                     key={idx}
