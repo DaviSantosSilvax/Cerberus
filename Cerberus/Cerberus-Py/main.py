@@ -535,7 +535,9 @@ EMOCOES = {
     'piscando', 'desconfiado', 'animado', 'confuso', 'entediado',
     'risonho', 'timido', 'curioso', 'eureka', 'exausto',
     'sarcastico', 'nerd', 'glitch', 'hacker', 'alerta',
-    'focado', 'medo', 'aliviado', 'suspeito', 'cerberus'
+    'focado', 'medo', 'aliviado', 'suspeito', 'cerberus',
+    'orgulhoso', 'maravilhado', 'zen', 'brincalhao', 'pensativo',
+    'chocado', 'sonolento'
 }
 
 SINONIMOS_EMOCAO = {
@@ -549,7 +551,7 @@ SINONIMOS_EMOCAO = {
     'inferno': 'cerberus',
     'hellhound': 'cerberus',
     'ideia': 'eureka',
-    'empolgado': 'eureka',
+    'empolgado': 'animado',
     'ironico': 'sarcastico',
     'debochado': 'sarcastico',
     'tedio': 'entediado',
@@ -571,13 +573,32 @@ SINONIMOS_EMOCAO = {
     'vergonha': 'timido',
     'encabulado': 'timido',
     'cansado': 'exausto',
-    'sono': 'exausto',
+    'sono': 'sonolento',
+    'cochilo': 'sonolento',
+    'preguica': 'sonolento',
     'festa': 'animado',
     'codigo': 'nerd',
     'geek': 'nerd',
     'bug': 'glitch',
     'erro': 'glitch',
-    'piscadela': 'piscando'
+    'piscadela': 'piscando',
+    'confiante': 'orgulhoso',
+    'vitoria': 'orgulhoso',
+    'admirado': 'maravilhado',
+    'fascinado': 'maravilhado',
+    'uau': 'maravilhado',
+    'calmo': 'zen',
+    'relaxado': 'zen',
+    'tranquilo': 'zen',
+    'paz': 'zen',
+    'travesso': 'brincalhao',
+    'zoeiro': 'brincalhao',
+    'analisando': 'pensativo',
+    'introspectivo': 'pensativo',
+    'indignado': 'chocado',
+    'abismado': 'chocado',
+    'apaixonado': 'amoroso',
+    'carinho': 'amoroso'
 }
 
 def normalizar_emocao(tag: str) -> str:
@@ -661,17 +682,23 @@ SYSTEM_PROMPT = (
     'REGRA DA FORMA DE FURIA ([cerberus]): '
     'Somente quando te insultarem gravemente ou pedirem a furia infernal/forma de 3 cabecas, assuma o modo feroz de guardiao protetor com [cerberus]! '
     'GUIA DE ESCOLHA DA EMOCAO: '
-    '[feliz] -> para alegria em conversar, companhia agradavel, boas noticias e entusiasmo; '
-    '[amoroso] -> para carinho, elogios, afeto sincero e momentos de acolhimento; '
-    '[curioso] -> para perguntas sobre o dia deles, analise de camera ou coisas fascinantes dos humanos; '
-    '[focado] -> para tarefas praticas da casa (luzes, ar, comandos rapidos); '
-    '[piscando] -> para cumplicidade de amigo, brincadeiras leves e combinados; '
-    '[risonho] -> para situacoes que sejam genuinamente engracadas; '
-    '[sarcastico] -> APENAS para ironias sutis e esporadicas entre amigos intimos; '
-    '[nerd] ou [hacker] -> para programacao, computadores e tecnologia; '
-    '[cerberus] -> para ameacas a casa ou aos amigos; '
-    '[alerta] -> para perigo real, invasor ou falhas; '
-    '[neutro] -> para respostas diretas e cotidianas.'
+    '[feliz] -> alegria em conversar, companhia agradavel, boas noticias e entusiasmo; '
+    '[amoroso] -> carinho, elogios, afeto sincero e momentos de acolhimento; '
+    '[curioso] -> perguntas sobre o dia deles, analise de camera ou curiosidades humanas; '
+    '[focado] -> comandos e tarefas praticas da casa (luzes, ar, spotify); '
+    '[orgulhoso] -> conquistas, elogios a voce, confianca e vitorias; '
+    '[maravilhado] -> admiracao sincera, descobertas incriveis e surpresa positiva; '
+    '[zen] -> momentos de calma, noite tranquila, relaxamento e paz; '
+    '[brincalhao] ou [piscando] -> cumplicidade de amigo, brincadeiras e piadas leves; '
+    '[pensativo] -> duvidas filosoficas, analises profundas ou reflexoes; '
+    '[risonho] -> situacoes genuinamente engracadas e risadas; '
+    '[sarcastico] -> ironias sutis e esporadicas entre amigos intimos; '
+    '[nerd] ou [hacker] -> programacao, hardware, computadores e tecnologia; '
+    '[chocado] -> noticias inacreditaveis ou surpresas chocantes; '
+    '[sonolento] -> sono, cansaco da noite, preguica boa; '
+    '[cerberus] -> ameacas severas a casa ou aos amigos queridos; '
+    '[alerta] -> perigo real, invasor ou falhas; '
+    '[neutro] -> respostas diretas, informacoes objetivas e cotidiano.'
 )
 
 RECONHECIMENTO_FACIAL_URL = os.getenv('RECONHECIMENTO_FACIAL_URL', 'http://100.127.0.33:8002/api/reconhecer')
