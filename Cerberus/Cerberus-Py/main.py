@@ -1085,6 +1085,30 @@ async def processar_mensagem(mensagem: str) -> dict:
         bruto = resposta_final.choices[0].message.content
     else:
         bruto = mensagem_ia.content
+        # Fallback de Garantia: Se a IA respondeu em texto sem emitir tool_call, mas o usuário pediu para tocar/controlar música
+        msg_l = sem_acento(mensagem.lower())
+        if any(w in msg_l for w in ['tocar', 'toque', 'toca', 'ouvir', 'coloca', 'coloque', 'solta']):
+            termo_busca = mensagem
+            for p in ['toque uma musica ', 'toque uma musica', 'toque musica ', 'tocar uma musica ', 'toca uma musica ', 'coloca uma musica ', 'solta uma musica ', 'toque ', 'toca ', 'coloca ']:
+                if msg_l.startswith(p):
+                    termo_busca = mensagem[len(p):].strip()
+                    break
+            if not termo_busca or any(x in termo_busca.lower() for x in ['animada', 'boa', 'legal', 'que voce quiser', 'para mim', 'pra mim', 'qualquer']):
+                termo_busca = 'Daft Punk Get Lucky'
+            print(f"LOG FALLBACK SPOTIFY: Executando tocar_musica_spotify('{termo_busca}')")
+            await executar_ferramenta('tocar_musica_spotify', {'termo': termo_busca})
+        elif any(w in msg_l for w in ['pausar', 'pausa', 'para a musica', 'para o som']):
+            print("LOG FALLBACK SPOTIFY: Executando pausar_musica_spotify")
+            await executar_ferramenta('pausar_musica_spotify', {})
+        elif any(w in msg_l for w in ['retomar', 'continua a musica', 'despausar']):
+            print("LOG FALLBACK SPOTIFY: Executando retomar_musica_spotify")
+            await executar_ferramenta('retomar_musica_spotify', {})
+        elif any(w in msg_l for w in ['proxima musica', 'passa a musica', 'pula a musica', 'pula essa']):
+            print("LOG FALLBACK SPOTIFY: Executando proxima_musica_spotify")
+            await executar_ferramenta('proxima_musica_spotify', {})
+        elif any(w in msg_l for w in ['musica anterior', 'volta a musica', 'voltar musica']):
+            print("LOG FALLBACK SPOTIFY: Executando musica_anterior_spotify")
+            await executar_ferramenta('musica_anterior_spotify', {})
 
     emocao_escolhida, texto_limpo = extrair_segmentos_emocao(bruto)
 
