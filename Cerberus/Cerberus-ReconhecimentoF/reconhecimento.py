@@ -8,13 +8,13 @@ import insightface
 from insightface.app import FaceAnalysis
 
 class SistemaReconhecimentoFacial:
-    def __init__(self, pasta_fotos="Bd_Fotos", modelo_nome="buffalo_l", threshold_similitude=0.45):
+    def __init__(self, pasta_fotos="Bd_Fotos", modelo_nome="buffalo_l", threshold_similitude=0.40):
         """
         Inicializa o sistema de reconhecimento facial utilizando a biblioteca InsightFace.
         
         :param pasta_fotos: Diretório contendo as fotos das pessoas (ex: 'davi_1.jpg', 'davi_2.jpg')
         :param modelo_nome: Nome do pacote de modelos InsightFace (padrão: 'buffalo_l')
-        :param threshold_similitude: Limiar de similaridade de cosseno para reconhecer a pessoa (0.40 a 0.50)
+        :param threshold_similitude: Limiar de similaridade de cosseno para reconhecer a pessoa (padrão: 0.40)
         """
         self.pasta_fotos = pasta_fotos
         self.threshold = threshold_similitude
@@ -137,6 +137,7 @@ class SistemaReconhecimentoFacial:
         """
         Recebe um caminho de imagem ou ndarray (OpenCV) e retorna uma lista
         com todas as faces identificadas e seus respectivos nomes.
+        Utiliza Max-Pooling contra todas as fotos cadastradas de cada pessoa.
         """
         if isinstance(imagem_input, str):
             img = cv2.imread(imagem_input)
@@ -148,7 +149,7 @@ class SistemaReconhecimentoFacial:
         faces_detectadas = self.app.get(img)
         resultados = []
 
-        if not self.banco_medias:
+        if not self.banco_embeddings:
             for face in faces_detectadas:
                 bbox = face.bbox.astype(int).tolist()
                 resultados.append({
@@ -160,19 +161,25 @@ class SistemaReconhecimentoFacial:
                 })
             return resultados
 
-        nomes_conhecidos = list(self.banco_medias.keys())
-        matriz_conhecidos = np.vstack([self.banco_medias[n] for n in nomes_conhecidos])
-
         for face in faces_detectadas:
             target_emb = face.normed_embedding
             
-            # Similaridade de cosseno com cada pessoa do banco
-            similaridades = np.dot(matriz_conhecidos, target_emb)
-            melhor_idx = np.argmax(similaridades)
-            melhor_score = float(similaridades[melhor_idx])
+            melhor_score = -1.0
+            melhor_pessoa = "Desconhecido"
+
+            for pessoa, embs in self.banco_embeddings.items():
+                if not embs:
+                    continue
+                matriz_embs = np.vstack(embs)
+                sims = np.dot(matriz_embs, target_emb)
+                # Max-pooling: similaridade com a melhor foto cadastrada da pessoa
+                score = float(np.max(sims))
+                if score > melhor_score:
+                    melhor_score = score
+                    melhor_pessoa = pessoa
 
             if melhor_score >= self.threshold:
-                nome_identificado = nomes_conhecidos[melhor_idx]
+                nome_identificado = melhor_pessoa
             else:
                 nome_identificado = "Desconhecido"
 

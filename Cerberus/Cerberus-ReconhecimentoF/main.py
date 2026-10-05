@@ -34,11 +34,14 @@ estado_presenca = {
     "ultimo_evento": "Inicializado"
 }
 
-# Controle de cooldown (para nao spammar saudacoes a cada segundo)
-ultimas_saudacoes = {
-    "Davi": 0,
-    "Dudica": 0,
-    "Desconhecido": 0
+# Controle de Presenca e Filtro Anti-Flicker
+tracker_pessoas = {
+    "Davi": {"presente": False, "ultimo_visto": 0, "frames_consecutivos": 0},
+    "Dudica": {"presente": False, "ultimo_visto": 0, "frames_consecutivos": 0},
+}
+tracker_desconhecido = {
+    "frames_consecutivos": 0,
+    "ultimo_alerta": 0
 }
 
 # Cliente MQTT
@@ -70,36 +73,27 @@ def publicar_mqtt(topico: str, payload: str, retain: bool = False):
 
 async def reagir_reconhecimento(nome: str):
     """Dispara a animacao, legenda e fala do Styx no ESP32 de acordo com a pessoa detectada."""
-    agora = time.time()
-    cooldown = ultimas_saudacoes.get(nome, 0)
-
     if nome == "Davi":
-        if agora - cooldown > 60:
-            ultimas_saudacoes["Davi"] = agora
-            estado_presenca["ultimo_evento"] = "Saudacao enviada para Davi"
-            print(">>> [RECONHECIMENTO] Davi avistado! Ativando Styx no ESP32...")
-            publicar_mqtt("quarto/estado", "falando")
-            publicar_mqtt("quarto/emocao", "feliz")
-            publicar_mqtt("quarto/legenda", "Ola Davi! Bem-vindo de volta! :)")
-            await asyncio.sleep(6)
-            publicar_mqtt("quarto/estado", "ocioso")
+        estado_presenca["ultimo_evento"] = "Saudacao enviada para Davi"
+        print(">>> [RECONHECIMENTO] Davi avistado! Ativando Styx no ESP32...")
+        publicar_mqtt("quarto/estado", "falando")
+        publicar_mqtt("quarto/emocao", "feliz")
+        publicar_mqtt("quarto/legenda", "Ola Davi! Bem-vindo de volta! :)")
+        await asyncio.sleep(6)
+        publicar_mqtt("quarto/estado", "ocioso")
     elif nome == "Dudica":
-        if agora - cooldown > 60:
-            ultimas_saudacoes["Dudica"] = agora
-            estado_presenca["ultimo_evento"] = "Saudacao enviada para Dudica"
-            print(">>> [RECONHECIMENTO] Dudica avistada! Ativando Styx amoroso...")
-            publicar_mqtt("quarto/estado", "falando")
-            publicar_mqtt("quarto/emocao", "amoroso")
-            publicar_mqtt("quarto/legenda", "Ola Dudica! Que bom te ver por aqui! <3")
-            await asyncio.sleep(6)
-            publicar_mqtt("quarto/estado", "ocioso")
+        estado_presenca["ultimo_evento"] = "Saudacao enviada para Dudica"
+        print(">>> [RECONHECIMENTO] Dudica avistada! Ativando Styx amoroso...")
+        publicar_mqtt("quarto/estado", "falando")
+        publicar_mqtt("quarto/emocao", "amoroso")
+        publicar_mqtt("quarto/legenda", "Ola Dudica! Que bom te ver por aqui! <3")
+        await asyncio.sleep(6)
+        publicar_mqtt("quarto/estado", "ocioso")
     elif nome == "Desconhecido":
-        if agora - cooldown > 45:
-            ultimas_saudacoes["Desconhecido"] = agora
-            estado_presenca["ultimo_evento"] = "Alerta: Pessoa desconhecida"
-            print(">>> [RECONHECIMENTO] Rosto desconhecido! Styx em alerta...")
-            publicar_mqtt("quarto/emocao", "suspeito")
-            publicar_mqtt("quarto/legenda", "[ALERTA] Rosto desconhecido avistado no quarto.")
+        estado_presenca["ultimo_evento"] = "Alerta: Pessoa desconhecida"
+        print(">>> [RECONHECIMENTO] Rosto desconhecido confirmado! Styx em alerta...")
+        publicar_mqtt("quarto/emocao", "suspeito")
+        publicar_mqtt("quarto/legenda", "[ALERTA] Rosto desconhecido avistado no quarto.")
 
 async def loop_reconhecimento_continuo():
     """Loop autonomo em background que monitora a camera e gera eventos de presenca e saudacoes."""
@@ -127,39 +121,80 @@ async def loop_reconhecimento_continuo():
             consecutivos_erros = 0
             estado_presenca["camera_online"] = True
 
-            # Processa reconhecimento facial com InsightFace
+            # Processa reconhecimento facial com InsightFace (Max-Pooling)
             resultados = reconhecedor.identificar_faces(img)
-            nomes = [r["nome"] for r in resultados]
-            conhecidos = list(set([n for n in nomes if n != "Desconhecido"]))
-            tem_desconhecido = any(n == "Desconhecido" for n in nomes)
+            nomes_detectados = [r["nome"] for r in resultados]
+            conhecidos = list(set([n for n in nomes_detectados if n != "Desconhecido"]))
+            tem_desconhecido_raw = any(n == "Desconhecido" for n in nomes_detectados)
+            agora = time.time()
 
-            estado_presenca["pessoas_atuais"] = conhecidos if conhecidos else (["Desconhecido"] if tem_desconhecido else [])
+            # 1. Rastreamento e Estabilidade de Pessoas Conhecidas
+            for pessoa in ["Davi", "Dudica"]:
+                info = tracker_pessoas.setdefault(pessoa, {"presente": False, "ultimo_visto": 0, "frames_consecutivos": 0})
+                if pessoa in conhecidos:
+                    info["frames_consecutivos"] += 1
+                    info["ultimo_visto"] = agora
+                    
+                    # Se acabou de chegar no quarto (estava ausente)
+                    if not info["presente"] and info["frames_consecutivos"] >= 1:
+                        info["presente"] = True
+                        print(f">>> [PRESENCA] {pessoa} CHEGOU ao quarto!")
+                        asyncio.create_task(reagir_reconhecimento(pessoa))
+                else:
+                    # Ausente ha mais de 45 segundos -> Marca que saiu do quarto
+                    if info["presente"] and (agora - info["ultimo_visto"] > 45):
+                        info["presente"] = False
+                        info["frames_consecutivos"] = 0
+                        print(f">>> [PRESENCA] {pessoa} SAIU do quarto (ausente > 45s).")
+
+            # Alguem conhecido esta no quarto ou foi visto ha menos de 20 segundos?
+            alguem_conhecido_no_quarto = any(
+                p["presente"] or (agora - p["ultimo_visto"] < 20) 
+                for p in tracker_pessoas.values()
+            )
+
+            # 2. Filtro Anti-Flicker para Rosto Desconhecido
+            # SE Davi ou Dudica ja estao no quarto e ha apenas 1 face,
+            # variacoes de angulo/iluminacao NAO sao um invasor desconhecido!
+            desconhecido_valido = False
+            if tem_desconhecido_raw:
+                if alguem_conhecido_no_quarto and len(resultados) <= 1:
+                    # E a propria pessoa conhecida que virou o rosto ou olhou pra baixo
+                    tracker_desconhecido["frames_consecutivos"] = 0
+                else:
+                    # Rosto realmente nao identificado ou segunda pessoa no quarto
+                    tracker_desconhecido["frames_consecutivos"] += 1
+                    if tracker_desconhecido["frames_consecutivos"] >= 3:
+                        desconhecido_valido = True
+            else:
+                tracker_desconhecido["frames_consecutivos"] = 0
+
+            # 3. Disparo de Alerta de Desconhecido (somente se confirmado por 3 frames consecutivos)
+            if desconhecido_valido:
+                if agora - tracker_desconhecido["ultimo_alerta"] > 180: # 3 minutos de cooldown
+                    tracker_desconhecido["ultimo_alerta"] = agora
+                    asyncio.create_task(reagir_reconhecimento("Desconhecido"))
+
+            # Telemetria para o Dashboard e MQTT
+            pessoas_ativas = [p for p, inf in tracker_pessoas.items() if inf["presente"]]
+            estado_presenca["pessoas_atuais"] = pessoas_ativas if pessoas_ativas else (["Desconhecido"] if desconhecido_valido else [])
             estado_presenca["total_faces"] = len(resultados)
             
             if resultados:
                 agora_str = time.strftime("%H:%M:%S")
                 estado_presenca["ultima_deteccao"] = agora_str
-                if conhecidos:
-                    estado_presenca["ultima_pessoa_vista"] = ", ".join(conhecidos)
-                elif tem_desconhecido:
+                if pessoas_ativas:
+                    estado_presenca["ultima_pessoa_vista"] = ", ".join(pessoas_ativas)
+                elif desconhecido_valido:
                     estado_presenca["ultima_pessoa_vista"] = "Desconhecido"
 
-                # Publica presenca no MQTT
                 payload_presenca = json.dumps({
-                    "pessoas": conhecidos,
-                    "tem_desconhecido": tem_desconhecido,
+                    "pessoas": pessoas_ativas,
+                    "tem_desconhecido": desconhecido_valido,
                     "total": len(resultados),
                     "horario": agora_str
                 })
                 publicar_mqtt("quarto/presenca", payload_presenca)
-
-                # Reage no ESP32 caso Davi ou Dudica aparecam
-                if "Davi" in conhecidos:
-                    asyncio.create_task(reagir_reconhecimento("Davi"))
-                elif "Dudica" in conhecidos:
-                    asyncio.create_task(reagir_reconhecimento("Dudica"))
-                elif tem_desconhecido:
-                    asyncio.create_task(reagir_reconhecimento("Desconhecido"))
 
         except Exception as e:
             consecutivos_erros += 1
