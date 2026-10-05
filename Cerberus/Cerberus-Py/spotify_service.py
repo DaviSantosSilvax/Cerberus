@@ -101,14 +101,23 @@ def executar_start_playback(sp, target_dev: str = None, **kwargs) -> bool:
     """
     Inicia a reprodução de forma resiliente:
     1. Tenta no dispositivo especificado se fornecido.
-    2. Se falhar (ex: dispositivo 404, offline ou ID antigo), tenta sem device_id (no dispositivo ativo).
+    2. Se falhar, tenta transferir a reprodução ativamente via transfer_playback.
+    3. Se falhar, tenta sem device_id (no dispositivo ativo).
     """
     if target_dev:
         try:
             sp.start_playback(device_id=target_dev, **kwargs)
             return True
         except Exception as e1:
-            print(f"[Spotify Playback] Falha com device_id={target_dev}: {e1}, tentando sessão ativa...")
+            print(f"[Spotify Playback] Falha direta com device_id={target_dev}: {e1}, tentando transfer_playback...")
+            try:
+                sp.transfer_playback(device_id=target_dev, force_play=True)
+                time.sleep(0.4)
+                if kwargs:
+                    sp.start_playback(device_id=target_dev, **kwargs)
+                return True
+            except Exception as e_trans:
+                print(f"[Spotify Playback] Falha no transfer_playback: {e_trans}")
 
     try:
         sp.start_playback(**kwargs)
