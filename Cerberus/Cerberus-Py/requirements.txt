@@ -8,3 +8,5 @@ httpx
 groq
 edge-tts
 paho-mqtt
+spotipy
+requests

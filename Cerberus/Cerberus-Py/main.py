@@ -26,10 +26,12 @@ RECONHECIMENTO_FACIAL_DIR = os.getenv(
 if os.path.exists(RECONHECIMENTO_FACIAL_DIR) and RECONHECIMENTO_FACIAL_DIR not in sys.path:
     sys.path.append(RECONHECIMENTO_FACIAL_DIR)
 
+spotify_import_error = None
 try:
     import spotify_service
     print("LOG SPOTIFY: Módulo carregado com sucesso!")
 except Exception as e:
+    spotify_import_error = str(e)
     print(f"LOG SPOTIFY AVISO: Não foi possível carregar ({e})")
     spotify_service = None
 
@@ -339,7 +341,7 @@ def get_status_quarto():
 @app.get('/api/spotify/status')
 def get_spotify_status():
     if not spotify_service:
-        return {"conectado": False, "mensagem": "Módulo Spotify não disponível"}
+        return {"conectado": False, "mensagem": f"Módulo Spotify não disponível: {spotify_import_error}"}
     return spotify_service.obter_tocando_agora()
 
 @app.post('/api/spotify/play')
